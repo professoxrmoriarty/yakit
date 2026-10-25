@@ -11,10 +11,6 @@ on:
         required: false
         default: 'english-edition'
 
-  push:
-    tags:
-      - 'v*'
-
   workflow_dispatch:
     inputs:
       tag_name:
