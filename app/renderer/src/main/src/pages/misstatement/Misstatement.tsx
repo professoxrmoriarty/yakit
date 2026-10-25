@@ -196,23 +196,23 @@ export const Misstatement: React.FC<MisstatementProp> = (props) => {
           filters: [
             {
               value: 'critical',
-              label: 'Critical',
+              label: '严重',
             },
             {
               value: 'high',
-              label: 'High',
+              label: '高危',
             },
             {
               value: 'warning',
-              label: 'Medium',
+              label: '中危',
             },
             {
               value: 'low',
-              label: 'Low',
+              label: '低危',
             },
             {
               value: 'info',
-              label: 'Info',
+              label: '信息',
             },
           ],
         },

@@ -78,22 +78,22 @@ describe('HTTPFlowDetailMini mark synchronization', () => {
       Id: 7,
       RequestString: 'GET / HTTP/1.1',
       ResponseString: 'HTTP/1.1 200 OK',
-      IssueType: 'SQL Injection',
-      Severity: 'Low',
+      IssueType: 'SQL注入',
+      Severity: '低危',
       Status: '待修复',
       StatusReason: 'old note',
     } as HTTPFlow
     const updatedFlow = {
       ...initialFlow,
       IssueType: 'XSS',
-      Severity: 'High',
+      Severity: '高危',
       Status: '已修复',
       StatusReason: 'new note',
     }
     const { rerender } = render(<HTTPFlowDetailMini id={7} selectedFlow={initialFlow} />)
 
     fireEvent.click(await screen.findByText('HTTPFlowTable.RowContextMenu.modifyMark'))
-    await waitFor(() => expect(mocks.modalOptions?.content?.props?.info?.IssueType).toBe('SQL Injection'))
+    await waitFor(() => expect(mocks.modalOptions?.content?.props?.info?.IssueType).toBe('SQL注入'))
     mocks.modalOptions = undefined
 
     rerender(<HTTPFlowDetailMini id={7} selectedFlow={updatedFlow} />)
@@ -103,7 +103,7 @@ describe('HTTPFlowDetailMini mark synchronization', () => {
       expect(mocks.modalOptions?.content?.props?.info).toMatchObject({
         Id: 7,
         IssueType: 'XSS',
-        Severity: 'High',
+        Severity: '高危',
         Status: '已修复',
         StatusReason: 'new note',
       })

@@ -31,13 +31,13 @@ export const CVEDescription = React.memo(
   }: CVEDetail) => {
     const color = useCreation(() => {
       let text = 'success'
-      if (Severity === 'Critical') {
+      if (Severity === '严重') {
         text = 'serious'
       }
-      if (Severity === 'High') {
+      if (Severity === '高危') {
         text = 'danger'
       }
-      if (Severity === 'Medium') {
+      if (Severity === '中危') {
         text = 'warning'
       }
       return text

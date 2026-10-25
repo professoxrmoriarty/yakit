@@ -180,7 +180,7 @@ const qaDocumentList: QaDocumentInfo[] = [
           <h2>原因及修复方法</h2>
           <div>
             设置risk的类型现在有规范，只能使用合法的type。以下列出合法的risk
- type（通常为英文），从其中选择合适的将risk.type参数替换即可。
+            type（通常为英文），从其中选择合适的将risk.type参数替换即可。
           </div>
         </div>
         <div>
@@ -193,7 +193,7 @@ const qaDocumentList: QaDocumentInfo[] = [
             <li>sqlinjection</li>
             <li>sql-injection</li>
           </ul>
-          <div>XSS</div>
+          <div>跨站脚本</div>
           <ul>
             <li>xss</li>
           </ul>
@@ -225,7 +225,7 @@ const qaDocumentList: QaDocumentInfo[] = [
           <div>访问控制</div>
           <ul>
             <li>unauth-access</li>
-            <li>Unauthorized Access</li>
+            <li>未授权访问</li>
             <li>authentication-bypass</li>
             <li>privilege-escalation</li>
           </ul>
@@ -241,7 +241,7 @@ const qaDocumentList: QaDocumentInfo[] = [
             <li>weak-pass</li>
             <li>weak-password</li>
             <li>weak-credential</li>
-            <li>Weak Password</li>
+            <li>弱口令</li>
           </ul>
           <div>逻辑漏洞</div>
           <ul>
@@ -252,11 +252,11 @@ const qaDocumentList: QaDocumentInfo[] = [
             <li>compliance-test</li>
             <li>cve-baseline</li>
           </ul>
-          <div>SSRF</div>
+          <div>服务端请求伪造</div>
           <ul>
             <li>ssrf</li>
           </ul>
-          <div>CSRF</div>
+          <div>跨站请求伪造</div>
           <ul>
             <li>csrf</li>
           </ul>
