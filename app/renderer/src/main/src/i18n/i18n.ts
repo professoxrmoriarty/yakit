@@ -10,7 +10,18 @@ if (useI18nInline) {
   // eager glob 在构建期展开为静态 import，中文资源随本模块同步可用（不产运行时懒 chunk）
   const modules = import.meta.glob('../locales/zh/*.json', { eager: true, import: 'default' })
 
-  const resources: Resource = { zh: {} }
+  const zhModules = import.meta.glob('../locales/zh/*.json', { eager: true, import: 'default' })
+  const enModules = import.meta.glob('../locales/en/*.json', { eager: true, import: 'default' })
+
+  const resources: Resource = { zh: {}, en: {} }
+  const nsOf = (p: string) => p.split('/').pop()!.replace(/\.json$/, '')
+
+  for (const [p, mod] of Object.entries(zhModules)) {
+    resources.zh[nsOf(p)] = mod as ResourceKey
+  }
+  for (const [p, mod] of Object.entries(enModules)) {
+    resources.en[nsOf(p)] = mod as ResourceKey
+  }
   for (const [path, mod] of Object.entries(modules)) {
     const ns = path
       .split('/')
