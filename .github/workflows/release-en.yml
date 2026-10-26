@@ -240,6 +240,7 @@ jobs:
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
           name: "Yakit English Edition (${{ steps.resolve_tag.outputs.tag }})"
+          overwrite: true
           body: |
             ### Yakit English Edition — ${{ steps.resolve_tag.outputs.tag }}
             * **Default Language:** English (`en`) enabled out of the box.
