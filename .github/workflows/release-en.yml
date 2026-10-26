@@ -103,8 +103,8 @@ jobs:
             platform: win
           - os: ubuntu-latest
             platform: linux
-          - os: macos-latest
-            platform: mac
+          # - os: macos-latest   <-- ဤနှစ်ကြောင်းကို ဖျက်လိုက်ပါ
+          #   platform: mac
 
     env:
       CI: "true"
