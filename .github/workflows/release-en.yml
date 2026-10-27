@@ -213,6 +213,7 @@ jobs:
   publish-release:
     name: Publish English Release
     needs: [prepare-engine, build-matrix]
+    if: always()    # <--- ဤစာကြောင်းကို မဖြစ်မနေ ထပ်ဖြည့်ပေးပါ
     runs-on: ubuntu-latest
     steps:
       - name: 1. Download All OS Artifacts
