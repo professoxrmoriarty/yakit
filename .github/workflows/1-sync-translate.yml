@@ -16,7 +16,7 @@ permissions:
 
 env:
   UPSTREAM_REPO: "https://github.com/yaklang/yakit.git"
-  UPSTREAM_BRANCH: "main"
+  UPSTREAM_BRANCH: "master"  # 'main' အစား 'master' ဟု ပြင်ပါ
   TARGET_BRANCH: "english-edition"
 
 jobs:
