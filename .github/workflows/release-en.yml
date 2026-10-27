@@ -253,8 +253,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-assets/*.exe
-            release-assets/*.dmg
-            release-assets/*.AppImage
+            release-assets/**/*.exe
+            release-assets/**/*.dmg
+            release-assets/**/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
