@@ -10,21 +10,17 @@ on:
         type: string
         required: false
         default: 'english-edition'
-
-  push:
-    tags:
-      - 'v*'
-
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag အမည် (ဥပမာ v1.4.9-1016-en)'
+        description: 'Release Tag အမည် (ဥပမာ v1.4.9-1023-en)'
         required: false
         default: ''
       target_ref:
         description: 'Build လုပ်မည့် Branch (ပုံမှန် english-edition)'
         required: false
         default: 'english-edition'
+  # (မှတ်ချက် - Sync လုပ်ချိန် နှစ်ခါမပွင့်စေရန် push tags ကို ဖြုတ်ထားပါသည်)
 
 permissions:
   contents: write
@@ -39,7 +35,7 @@ jobs:
     outputs:
       yak_version: ${{ steps.fetch_bins.outputs.yak_version }}
     steps:
-      - name: 1. Download Latest Yak Engine (Exact Official Layout)
+      - name: 1. Download Latest Yak Engine
         id: fetch_bins
         run: |
           mkdir -p bins
@@ -62,11 +58,9 @@ jobs:
             curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN}" -o "bins/${BIN}"
           done
 
-          # Windows Normal Engine Zip (bins/ လမ်းကြောင်းပါဝင်သော မူရင်းပုံစံအမှန်)
           zip bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
           rm -f bins/yak_windows_amd64.exe
 
-          # Windows Legacy Engine Zip
           if curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
              curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe"; then
             zip bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
@@ -76,7 +70,6 @@ jobs:
           chmod +x bins/yak_darwin_* bins/yak_linux_*
           ls -lh bins/
 
-      # ယခင် ပြုတ်ကျန်ခဲ့သော Artifact ပြန်တင်ပေးသည့် အဆင့် (မပါမဖြစ် လိုအပ်သည်)
       - name: 2. Upload Engine Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -86,7 +79,7 @@ jobs:
           retention-days: 3
 
   # ---------------------------------------------------------------------------
-  # အဆင့် (၂) - Windows (.exe), macOS (.dmg), Linux (.AppImage) ပြိုင်တူ Build ခြင်း
+  # အဆင့် (၂) - OS မျိုးစုံအတွက် (Yakit, IRify, Memfit AI) သုံးမျိုးလုံးကို Build ခြင်း
   # ---------------------------------------------------------------------------
   build-matrix:
     name: Build English Edition (${{ matrix.platform }})
@@ -103,8 +96,9 @@ jobs:
             platform: win
           - os: ubuntu-latest
             platform: linux
-          # - os: macos-latest   <-- ဤနှစ်ကြောင်းကို ဖျက်လိုက်ပါ
-          #   platform: mac
+          - os: macos-latest
+            platform: mac
+          # (macOS Server ပြည့်နေလို့ မစောင့်ချင်ရင် အပေါ်က ၂ ကြောင်းကို ဖျက်/Comment ပိတ်ထားနိုင်ပါသည်)
 
     env:
       CI: "true"
@@ -218,12 +212,11 @@ jobs:
           retention-days: 3
 
   # ---------------------------------------------------------------------------
-  # အဆင့် (၃) - OS အားလုံး၏ Installer များကို GitHub Releases သို့ တင်ပေးခြင်း
+  # အဆင့် (၃) - ပြီးပြည့်စုံသော (၃) မျိုးခွဲ Release များကို GitHub သို့ တင်ခြင်း
   # ---------------------------------------------------------------------------
   publish-release:
     name: Publish English Release
     needs: [prepare-engine, build-matrix]
-    if: always()    # <--- ဤစာကြောင်းကို မဖြစ်မနေ ထပ်ဖြည့်ပေးပါ
     runs-on: ubuntu-latest
     steps:
       - name: 1. Download All OS Artifacts
@@ -252,6 +245,14 @@ jobs:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
           name: "Yakit English Edition (${{ steps.resolve_tag.outputs.tag }})"
           overwrite: true
+          body: |
+            ### Yakit English Edition — ${{ steps.resolve_tag.outputs.tag }}
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
+            * **Supported Platforms:** Windows (`.exe`), macOS Apple Silicon & Intel (`.dmg`), Linux x64/arm64 (`.AppImage`).
+            * **Unsigned Installer Note:**
+              * **Windows:** SmartScreen တက်လာပါက `More info` → `Run anyway` ကို နှိပ်ပါ။
+              * **macOS:** `sudo xattr -rd com.apple.quarantine /Applications/Yakit.app` ကို Run ၍ ဖွင့်ပါ။
           draft: false
           prerelease: false
           files: |
@@ -265,6 +266,11 @@ jobs:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}-irify
           name: "IRify English Edition (${{ steps.resolve_tag.outputs.tag }}-irify)"
           overwrite: true
+          body: |
+            ### IRify English Edition — ${{ steps.resolve_tag.outputs.tag }}-irify
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
+            * **Description:** Static code analysis & rule evaluation brought to GUI.
           draft: false
           prerelease: false
           files: |
@@ -278,12 +284,14 @@ jobs:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}-memfit
           name: "Memfit AI English Edition (${{ steps.resolve_tag.outputs.tag }}-memfit)"
           overwrite: true
+          body: |
+            ### Memfit AI English Edition — ${{ steps.resolve_tag.outputs.tag }}-memfit
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
+            * **Description:** Open-source cybersecurity AI Agent orchestration framework.
           draft: false
           prerelease: false
           files: |
             release-assets/**/Memfit*.exe
             release-assets/**/Memfit*.dmg
             release-assets/**/Memfit*.AppImage
-      
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
