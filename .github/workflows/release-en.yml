@@ -175,7 +175,7 @@ jobs:
             }
           '
 
-      - name: 8. Install, Build & Package via Yakit Unified CLI
+      - name: 8. Install, Build & Package all editions (Yakit, IRify, Memfit)
         run: |
           chmod +x bins/yak_darwin_* bins/yak_linux_* 2>/dev/null || true
           ls -lh bins/
@@ -183,8 +183,18 @@ jobs:
 
           if [ -f "cli/cli.mjs" ]; then
             yarn cli install
+            
+            # 1. Build & Pack Yakit
             yarn cli build -v yakit --devtools
             yarn cli pack -s ${{ matrix.platform }} -v yakit
+            
+            # 2. Build & Pack IRify
+            yarn cli build -v irify
+            yarn cli pack -s ${{ matrix.platform }} -v irify
+            
+            # 3. Build & Pack Memfit AI
+            yarn cli build -v memfit
+            yarn cli pack -s ${{ matrix.platform }} -v memfit
           else
             yarn install
             yarn build-renders
@@ -236,25 +246,44 @@ jobs:
           echo "tag=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
           ls -lh release-assets/
 
-      - name: 3. Publish to GitHub Releases
+      - name: 3. Publish Yakit Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
           name: "Yakit English Edition (${{ steps.resolve_tag.outputs.tag }})"
           overwrite: true
-          body: |
-            ### Yakit English Edition — ${{ steps.resolve_tag.outputs.tag }}
-            * **Default Language:** English (`en`) enabled out of the box.
-            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
-            * **Supported Platforms:** Windows (`.exe`), macOS Apple Silicon & Intel (`.dmg`), Linux x64/arm64 (`.AppImage`).
-            * **Unsigned Installer Note:**
-              * **Windows:** SmartScreen တက်လာပါက `More info` → `Run anyway` ကို နှိပ်ပါ။
-              * **macOS:** `sudo xattr -rd com.apple.quarantine /Applications/Yakit.app` ကို Run ၍ ဖွင့်ပါ။
           draft: false
           prerelease: false
           files: |
-            release-assets/**/*.exe
-            release-assets/**/*.dmg
-            release-assets/**/*.AppImage
+            release-assets/**/Yakit*.exe
+            release-assets/**/Yakit*.dmg
+            release-assets/**/Yakit*.AppImage
+
+      - name: 4. Publish IRify Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}-irify
+          name: "IRify English Edition (${{ steps.resolve_tag.outputs.tag }}-irify)"
+          overwrite: true
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/IRify*.exe
+            release-assets/**/IRify*.dmg
+            release-assets/**/IRify*.AppImage
+
+      - name: 5. Publish Memfit AI Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}-memfit
+          name: "Memfit AI English Edition (${{ steps.resolve_tag.outputs.tag }}-memfit)"
+          overwrite: true
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/Memfit*.exe
+            release-assets/**/Memfit*.dmg
+            release-assets/**/Memfit*.AppImage
+      
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
