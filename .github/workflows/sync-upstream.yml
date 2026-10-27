@@ -39,7 +39,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # လက်ရှိ Repo ထဲရှိ မိမိ၏ Custom ဖိုင်များကို အရင်ဆုံး သိမ်းဆည်းထားခြင်း
           mkdir -p /tmp/backup/workflows
           cp -r .github/workflows/* /tmp/backup/workflows/ 2>/dev/null || true
           if [ -f ".github/security_glossary.json" ]; then
@@ -55,12 +54,10 @@ jobs:
             cp README_LEGACY.md /tmp/backup/README_LEGACY.md
           fi
 
-          # Tag conflict (exit code 1) လုံးဝမဖြစ်စေရန် --no-tags ဖြင့် ဆွဲယူခြင်း
           git remote add upstream "${{ env.UPSTREAM_REPO }}" 2>/dev/null || git remote set-url upstream "${{ env.UPSTREAM_REPO }}"
           git fetch --no-tags --depth=1 upstream "${{ env.UPSTREAM_BRANCH }}:refs/remotes/upstream/${{ env.UPSTREAM_BRANCH }}"
           git fetch --no-tags --depth=1 origin "${{ env.TARGET_BRANCH }}:refs/remotes/origin/${{ env.TARGET_BRANCH }}" 2>/dev/null || true
 
-          # english-edition ရှိပြီးသားဆိုလျှင် ဘာသာပြန် Cache ကို ယူပြီး upstream/master ကုဒ်အသန့်ဖြင့် ပြန်တည်ဆောက်ခြင်း
           if git show-ref --verify --quiet "refs/remotes/origin/${{ env.TARGET_BRANCH }}"; then
             git show "origin/${{ env.TARGET_BRANCH }}:.i18n_cache.json" > /tmp/backup/.i18n_cache_json_prev 2>/dev/null || true
             if [ -s "/tmp/backup/.i18n_cache_json_prev" ]; then
@@ -73,7 +70,6 @@ jobs:
             git checkout -B "${{ env.TARGET_BRANCH }}" "refs/remotes/upstream/${{ env.UPSTREAM_BRANCH }}"
           fi
 
-          # မူရင်း Repo မှ Workflow အဟောင်းများကို ဖယ်ရှားပြီး မိမိ၏ Custom ဖိုင်များ ပြန်ထည့်ခြင်း
           rm -rf .github/workflows/*
           mkdir -p .github/workflows
           cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
@@ -110,7 +106,6 @@ jobs:
           import time
           from deep_translator import GoogleTranslator
 
-          # ၁။ Main UI နှင့် Startup ဝင်းဒိုးရှိ i18n.ts များကို English (en) သို့ ပြောင်းခြင်း
           for root, _, files in os.walk("app/renderer"):
               if "node_modules" in root:
                   continue
@@ -119,12 +114,31 @@ jobs:
                   if f in ("i18n.ts", "i18n.js") or (root.endswith("i18n") and f.endswith((".ts", ".js"))):
                       with open(full, "r", encoding="utf-8") as fp:
                           txt = fp.read()
+                      
+                      # 1. Patch default language to en
                       new_txt = re.sub(r"(lng\s*:\s*)([^,\n]*?)'zh(-CN)?'", r"\1localStorage.getItem('i18nextLng') || 'en'", txt)
                       new_txt = re.sub(r"(fallbackLng\s*:\s*)'zh(-CN)?'", r"\1'en'", new_txt)
+                      
+                      # 2. Patch missing English resources in inline mode
+                      if "const zhModules" in new_txt and "enModules" not in new_txt:
+                          pattern = r"const\s+zhModules\s*=\s*import\.meta\.glob[^}]+resources\.zh\[nsOf\(p\)\]\s*=\s*mod\s*as\s*ResourceKey\s*}"
+                          replacement = """const zhModules = import.meta.glob('../locales/zh/*.json', { eager: true, import: 'default' })
+          const enModules = import.meta.glob('../locales/en/*.json', { eager: true, import: 'default' })
+          const resources: Resource = { zh: {}, en: {} }
+          const nsOf = (p: string) => p.split('/').pop()!.replace(/\.json$/, '')
+          for (const [p, mod] of Object.entries(zhModules)) {
+              resources.zh[nsOf(p)] = mod as ResourceKey
+          }
+          for (const [p, mod] of Object.entries(enModules)) {
+              resources.en[nsOf(p)] = mod as ResourceKey
+          }"""
+                          new_txt = re.sub(pattern, replacement, new_txt, flags=re.DOTALL)
+
                       if new_txt != txt:
                           with open(full, "w", encoding="utf-8") as fp:
                               fp.write(new_txt)
-                          print(f"Patched default language in: {full}")
+                          print(f"Patched default language & resources in: {full}")
+                  
                   elif f == "index.html":
                       with open(full, "r", encoding="utf-8") as fp:
                           html = fp.read()
@@ -134,7 +148,6 @@ jobs:
                               fp.write(new_html)
                           print(f"Patched startup loading text in: {full}")
 
-          # ၂။ Locale JSON ဖိုင်များကိုသာ ဘေးကင်းစွာ ဘာသာပြန်ခြင်း (.ts/.tsx ကုဒ်များကို လုံးဝမထိပါ)
           CACHE_FILE = ".i18n_cache.json"
           GLOSSARY_FILE = ".github/security_glossary.json"
           translator = GoogleTranslator(source='zh-CN', target='en')
@@ -260,7 +273,7 @@ jobs:
               for en_p, zh_d, en_d in pairs:
                   if apply_json(zh_d, en_d):
                       out_str = json.dumps(en_d, ensure_ascii=False, indent=2)
-                      json.loads(out_str)  # JSON မှန်ကန်ကြောင်း တစ်ခါတည်း စစ်ဆေးခြင်း
+                      json.loads(out_str)
                       with open(en_p, 'w', encoding='utf-8') as f:
                           f.write(out_str)
 
