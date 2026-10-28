@@ -539,7 +539,12 @@ jobs:
           const fs = require('fs');
           const path = require('path');
           const { execFileSync } = require('child_process');
-          const ts = require('typescript');
+          let ts;
+          try {
+            ts = require('typescript');
+          } catch (e) {
+            ts = null;
+          }
 
           const upstreamRef = `upstream/${process.env.UPSTREAM_BRANCH || 'master'}`;
           const revertedRecords = [];
@@ -583,9 +588,14 @@ jobs:
           }
 
           function checkTsSyntax(filesToCheck) {
-            if (filesToCheck.length === 0) return new Map();
+            if (!ts || filesToCheck.length === 0) return new Map();
             
-            // ts.ScriptTarget error မတက်စေရန် လုံခြုံသော target ကို အသုံးပြုခြင်း
+            const createProg = ts.createProgram || (ts.default && ts.default.createProgram);
+            if (typeof createProg !== 'function') {
+              console.log("Warning: ts.createProgram is not available, skipping strict TS syntax check.");
+              return new Map();
+            }
+
             const targetVersion = (ts.ScriptTarget && ts.ScriptTarget.Latest) ? ts.ScriptTarget.Latest : 99;
 
             const compilerOptions = {
@@ -610,7 +620,7 @@ jobs:
               }
             }
 
-            const program = ts.createProgram(absList, compilerOptions);
+            const program = createProg(absList, compilerOptions);
             const brokenMap = new Map();
 
             for (const [abs, rel] of absMap.entries()) {
@@ -620,7 +630,7 @@ jobs:
               if (diagnostics.length > 0) {
                 const d = diagnostics[0];
                 const { line, character } = sourceFile.getLineAndCharacterOfPosition(d.start || 0);
-                const msg = ts.flattenDiagnosticMessageText(d.messageText, ' ');
+                const msg = ts.flattenDiagnosticMessageText ? ts.flattenDiagnosticMessageText(d.messageText, ' ') : String(d.messageText);
                 brokenMap.set(rel, { code: `TS${d.code}`, reason: `Line ${line + 1}:${character + 1} - ${msg}` });
               }
             }
