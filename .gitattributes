@@ -28,3 +28,6 @@
 *.ico binary
 *.zip binary
 *.ttf binary
+
+.github/workflows/* merge=ours
+README.md merge=ours
