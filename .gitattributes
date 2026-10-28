@@ -30,6 +30,7 @@
 *.ttf binary
 
 .github/workflows/* merge=ours
+.github/PULL_REQUEST_TEMPLATE.md merge=ours
 README.md merge=ours
 README_LEGACY.md merge=ours
 .github/workflows/security_glossary.json merge=ours
