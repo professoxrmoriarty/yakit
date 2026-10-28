@@ -3,7 +3,7 @@ name: 2. Build and Release Yakit (English Edition)
 on:
   push:
     tags:
-      - 'v*-yakit-en' # Smart Sync မှ တင်လိုက်သော Tag များဝင်လာမှ Run မည်
+      - 'v*-yakit-en'
   workflow_dispatch:
     inputs:
       custom_tag:
@@ -33,7 +33,6 @@ jobs:
             build_flag: --mac
 
     env:
-      # React + Electron build လုပ်ချိန်တွင် Memory မလောက်ခြင်း (OOM) ကာကွယ်ရန်
       NODE_OPTIONS: "--max-old-space-size=8192"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,7 +46,7 @@ jobs:
       - name: 2. Setup Node.js & Yarn
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22' # 20 အစား 22 သို့ ပြောင်းလဲထားသည်
           cache: 'yarn'
 
       - name: 3. Setup Python
@@ -76,7 +75,8 @@ jobs:
         shell: bash
         run: |
           yarn config set network-timeout 300000
-          yarn install
+          # Engine version စစ်ဆေးမှုကြောင့် Error မတက်စေရန် --ignore-engines ထည့်ထားသည်
+          yarn install --ignore-engines
           yarn build
 
       - name: 7. Package Electron Installers
