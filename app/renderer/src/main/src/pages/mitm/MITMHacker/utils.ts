@@ -577,25 +577,7 @@ export const grpcMITMForwardModifiedResponse: APIFunc<MITMForwardModifiedRespons
   hiddenError,
 ) => {
   return new Promise((resolve, reject) => {
-    const url = `mitm-forward-modified-response`
-    ipcRenderer
-      .invoke(url, params)
-      .then(resolve)
-      .catch((e) => {
-        if (!hiddenError) yakitNotify('error', tOriginal('MITMHacker.grpc_mitmforwardmodifiedresponse_failed') + e)
-        reject(e)
-      })
-  })
-}
-
-export interface MITMExecScriptContentRequest extends MITMBaseData {
-  YakScriptContent: string
-}
-/** 热加载 */
-export const grpcMITMExecScriptContent: APIFunc<MITMExecScriptContentRequest, null> = (params, hiddenError) => {
-  return new Promise((resolve, reject) => {
-    const { version } = params
-    const url = `mitm${version}-exec-script-content`
+    const url = `mitm-forward-modified-response`ipcRenderer.invoke(url, params).then(resolve).catch((e) => {  if (!hiddenError) yakitNotify('error', tOriginal('MITMHacker.grpc_mitmforwardmodifiedresponse_failed') + e)  reject(e)  })  }) }  export interface MITMExecScriptContentRequest extends MITMBaseData {  YakScriptContent: string } /** HotPatch */ export const grpcMITMExecScriptContent: APIFunc<MITMExecScriptContentRequest, null> = (params, hiddenError) => {  return new Promise((resolve, reject) => {  const { version } = params  const url =`mitm${version}-exec-script-content`
     ipcRenderer
       .invoke(url, params.YakScriptContent)
       .then(resolve)

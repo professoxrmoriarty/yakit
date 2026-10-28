@@ -193,7 +193,7 @@ const qaDocumentList: QaDocumentInfo[] = [
             <li>sqlinjection</li>
             <li>sql-injection</li>
           </ul>
-          <div>跨站脚本</div>
+          <div>XSS</div>
           <ul>
             <li>xss</li>
           </ul>
@@ -225,7 +225,7 @@ const qaDocumentList: QaDocumentInfo[] = [
           <div>访问控制</div>
           <ul>
             <li>unauth-access</li>
-            <li>未授权访问</li>
+            <li>Unauthorized Access</li>
             <li>authentication-bypass</li>
             <li>privilege-escalation</li>
           </ul>
@@ -241,7 +241,7 @@ const qaDocumentList: QaDocumentInfo[] = [
             <li>weak-pass</li>
             <li>weak-password</li>
             <li>weak-credential</li>
-            <li>弱口令</li>
+            <li>Weak Password</li>
           </ul>
           <div>逻辑漏洞</div>
           <ul>
@@ -252,11 +252,11 @@ const qaDocumentList: QaDocumentInfo[] = [
             <li>compliance-test</li>
             <li>cve-baseline</li>
           </ul>
-          <div>服务端请求伪造</div>
+          <div>SSRF</div>
           <ul>
             <li>ssrf</li>
           </ul>
-          <div>跨站请求伪造</div>
+          <div>CSRF</div>
           <ul>
             <li>csrf</li>
           </ul>

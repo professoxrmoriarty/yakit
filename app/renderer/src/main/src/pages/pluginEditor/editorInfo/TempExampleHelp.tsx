@@ -282,7 +282,7 @@ http:
   },
   {
     label: '用友 U8-Cloud SQL 注入：基于时间盲注模版',
-    desc: '端口扫描',
+    desc: 'Port Scan',
     code: `\`\`\`port-scan
 yakit.AutoInitYakit()
 

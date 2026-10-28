@@ -262,13 +262,13 @@ const CVETableList: React.FC<CVETableListProps> = React.memo((props) => {
         width: 120,
         render: (_, i: CVEDetail) => {
           let color = 'success'
-          if (i.Severity === '严重') {
+          if (i.Severity === 'Critical') {
             color = 'serious'
           }
-          if (i.Severity === '高危') {
+          if (i.Severity === 'High') {
             color = 'danger'
           }
-          if (i.Severity === '中危') {
+          if (i.Severity === 'Medium') {
             color = 'warning'
           }
           return i.Severity === '-' ? (

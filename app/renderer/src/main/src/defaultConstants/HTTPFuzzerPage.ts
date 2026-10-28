@@ -321,7 +321,7 @@ afterRequest = func(https, originReq, req, originRsp, rsp) {
     isDefault: true,
   },
   {
-    name: '爆破 AES-CBC',
+    name: 'Brute Force AES-CBC',
     nameUi: 'HTTPFuzzerHotPatch.bruteforce_aes_cbc',
     temp: `decode = func(param) {
     key = codec.DecodeHex("31323334313233343132333431323334")~ /* 加密密钥 */
@@ -343,7 +343,7 @@ afterRequest = func(https, originReq, req, originRsp, rsp) {
     isDefault: true,
   },
   {
-    name: '爆破 RSA-OAEP',
+    name: 'Brute Force RSA-OAEP',
     nameUi: 'HTTPFuzzerHotPatch.bruteforce_rsa_oaep',
     temp: `decode2 = func(param) {
     publicKey64 = \`LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUFvVlRNNjNuRXE3YXpGQ0Yza2lEKwpuMGgyMnlvWmd2eU92TDJaS001NDg0SWZ0TFFERGdLUjFGTGhBOHJpZDkzRUdYVTRwNVNKZHVHdmhLRmxqR2s1ClFXYmFDcWNOdVNqM3NuYi9RRXU0TXZ2ZmFTMStWd3R4Vk84Z0lIdTVMRCs4ZXNTT1FMdTZaY1Q4dVJ3Wm00c00KNEh0ZXltc2Fjc1lGZmpWME5vMklnMnNVSVJaOTBYR2NzK01CMVFlMFQzcHBHa2V1WGhORnpjMldzS3ZreXBRSApZUDlUeENXejUwR1VhV3YzK2xnUDJzUTZtcFd6SWRDeUZ2OWRlU1NWeE1uRlJQQzU0R0s1endFNmJ3blBhRHJJClhzS0IxN2VnK1NES0FFVHpEYi9YSGxXamZqcWo3aWlabUw5bHJxK3pTU2F0R2llMzM4NVdQMlpUVlZHcDZlSnQKd1FJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0t\` /* base64格式的publicKey */

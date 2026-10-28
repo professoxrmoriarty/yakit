@@ -202,7 +202,7 @@ export const StackedVerticalBar: React.FC<VerticalOptionBarProps> = (props) => {
         textStyle: {
           color: legendTextColor,
         },
-        data: ['严重', '高危', '中危', '低危'],
+        data: ['Critical', 'High', 'Medium', 'Low'],
       },
       grid: {
         left: '6%',
@@ -225,7 +225,7 @@ export const StackedVerticalBar: React.FC<VerticalOptionBarProps> = (props) => {
       },
       series: [
         {
-          name: '低危',
+          name: 'Low',
           type: 'bar',
           stack: 'total',
           label: { show: true, color: titleColor },
@@ -235,7 +235,7 @@ export const StackedVerticalBar: React.FC<VerticalOptionBarProps> = (props) => {
           barMaxWidth: 120,
         },
         {
-          name: '中危',
+          name: 'Medium',
           type: 'bar',
           stack: 'total',
           label: { show: true, color: titleColor },
@@ -245,7 +245,7 @@ export const StackedVerticalBar: React.FC<VerticalOptionBarProps> = (props) => {
           barMaxWidth: 120,
         },
         {
-          name: '高危',
+          name: 'High',
           type: 'bar',
           stack: 'total',
           label: { show: true, color: titleColor },
@@ -255,7 +255,7 @@ export const StackedVerticalBar: React.FC<VerticalOptionBarProps> = (props) => {
           barMaxWidth: 120,
         },
         {
-          name: '严重',
+          name: 'Critical',
           type: 'bar',
           stack: 'total',
           label: { show: true, color: titleColor },

@@ -643,7 +643,7 @@ export const MITMPluginHijackContent: React.FC<MITMPluginHijackContentProps> = R
                       })
                   }}
                 >
-                  热加载
+                  HotPatch
                 </YakitButton>
               )}
               {isFullScreen ? (

@@ -180,23 +180,23 @@ export const SeverityMapTag = [
   {
     key: ['info', 'fingerprint', 'infof', 'default'],
     value: 'title-info',
-    name: '信息',
+    name: 'Info',
     nameUi: 'YakitTag.info',
     tag: 'success',
   },
-  { key: ['low'], value: 'title-low', name: '低危', nameUi: 'YakitTag.low', tag: 'warning' },
+  { key: ['low'], value: 'title-low', name: 'Low', nameUi: 'YakitTag.low', tag: 'warning' },
   {
     key: ['middle', 'warn', 'warning', 'medium'],
     value: 'title-middle',
-    name: '中危',
+    name: 'Medium',
     nameUi: 'YakitTag.warning',
     tag: 'info',
   },
-  { key: ['high'], value: 'title-high', name: '高危', nameUi: 'YakitTag.high', tag: 'danger' },
+  { key: ['high'], value: 'title-high', name: 'High', nameUi: 'YakitTag.high', tag: 'danger' },
   {
     key: ['fatal', 'critical', 'panic'],
     value: 'title-fatal',
-    name: '严重',
+    name: 'Critical',
     nameUi: 'YakitTag.critical',
     tag: 'serious',
   },
@@ -310,19 +310,19 @@ const getSeverityIcon = (Severity?: string) => {
   const severity = SeverityMapTag.filter((item) => item.key.includes(Severity || ''))[0]
   let icon = <></>
   switch (severity?.name) {
-    case '信息':
+    case 'Info':
       icon = <FingerprintInfoRiskColorful />
       break
-    case '低危':
+    case 'Low':
       icon = <LowRiskColorful />
       break
-    case '中危':
+    case 'Medium':
       icon = <MediumRiskColorful />
       break
-    case '高危':
+    case 'High':
       icon = <HighRiskColorful />
       break
-    case '严重':
+    case 'Critical':
       icon = <CriticalRiskColorful />
       break
     default:

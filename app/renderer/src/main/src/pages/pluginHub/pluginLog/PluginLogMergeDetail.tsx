@@ -755,7 +755,7 @@ const PluginBaseInfoForm: React.FC<PluginBaseInfoFormProps> = memo(
               disabled={allDisabled}
             >
               <YakitSelect.Option value="mitm">MITM</YakitSelect.Option>
-              <YakitSelect.Option value="port-scan">端口扫描</YakitSelect.Option>
+              <YakitSelect.Option value="port-scan">Port Scan</YakitSelect.Option>
             </YakitSelect>
           </Form.Item>
         )}

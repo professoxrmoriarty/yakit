@@ -58,19 +58,19 @@ export const MisstatementRiskDetails = <T extends API.RiskFeedBackData>(props: M
     const severity = SeverityMapTag.filter((item) => item.key.includes(info.severity || ''))[0]
     let icon = <></>
     switch (severity?.name) {
-      case '信息':
+      case 'Info':
         icon = <FingerprintInfoRiskColorful />
         break
-      case '低危':
+      case 'Low':
         icon = <LowRiskColorful />
         break
-      case '中危':
+      case 'Medium':
         icon = <MediumRiskColorful />
         break
-      case '高危':
+      case 'High':
         icon = <HighRiskColorful />
         break
-      case '严重':
+      case 'Critical':
         icon = <CriticalRiskColorful />
         break
       default:
@@ -476,7 +476,7 @@ const MisstatementAuditResultDescribe: React.FC<MisstatementAuditResultDescribeP
   }, [])
 
   const getRule = useMemoizedFn(() => {
-    return info?.fromRule || '漏洞检测'
+    return info?.fromRule || 'Vulnerability Detection'
   })
   return (
     <div className={styles['content-resize-second']}>
