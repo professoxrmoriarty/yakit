@@ -1,25 +1,32 @@
-## 改动类型
+Change Type
+[ ] New feature (new page / new option / new capability)
 
-- [ ] 新功能（新页面 / 新选项 / 新能力）
-- [ ] Bug 修复（有用户可见行为修正）
-- [ ] 文档改动
-- [ ] 样式 / UI 调整（无逻辑变化）
-- [ ] 性能优化
-- [ ] 重构（不改变外部行为）
-- [ ] 测试改动
-- [ ] 构建 / 依赖 / 打包配置
-- [ ] CI 流程改动
-- [ ] 杂项（脚本 / 工程化 / 版本号）
-- [ ] 其他
+[ ] Bug fix (fix for user-visible behavior)
 
-## 🔗 关联 Issue / PR
+[ ] Documentation update
 
-## 💡 背景与方案
+[ ] Style / UI adjustment (no logical changes)
 
-## 影响范围
+[ ] Performance optimization
 
-## 合并方式
+[ ] Refactoring (no changes to external behavior)
 
-- [ ] Create a merge commit（保留完整提交历史）
-- [ ] Squash and merge（压缩为一条提交）
-- [ ] Rebase and merge（线性历史）
+[ ] Test modification
+
+[ ] Build / dependency / packaging configuration
+
+[ ] CI pipeline modification
+
+[ ] Miscellaneous (scripts / engineering / version bump)
+
+[ ] Other
+
+🔗 Related Issue / PR
+💡 Background & Solution
+Scope of Impact
+Merge Strategy
+[ ] Create a merge commit (preserve full commit history)
+
+[ ] Squash and merge (squash into a single commit)
+
+[ ] Rebase and merge (linear history)
