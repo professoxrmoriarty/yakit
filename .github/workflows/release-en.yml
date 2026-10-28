@@ -20,55 +20,76 @@ on:
         description: 'Build လုပ်မည့် Branch (ပုံမှန် english-edition)'
         required: false
         default: 'english-edition'
-  # (မှတ်ချက် - Sync လုပ်ချိန် နှစ်ခါမပွင့်စေရန် push tags ကို ဖြုတ်ထားပါသည်)
 
 permissions:
   contents: write
 
 jobs:
   # ---------------------------------------------------------------------------
-  # အဆင့် (၁) - Official CDN မှ Yak Engine များကို ဆွဲယူပြီး Artifact တင်ပေးခြင်း
+  # အဆင့် (၁) - Official CDN မှ Yak Engine များနှင့် Chrome Extension ကို ဆွဲယူခြင်း
   # ---------------------------------------------------------------------------
   prepare-engine:
-    name: Fetch Yak Engine Binaries
+    name: Fetch Yak Engine Binaries & Chrome Plugin
     runs-on: ubuntu-latest
     outputs:
       yak_version: ${{ steps.fetch_bins.outputs.yak_version }}
     steps:
-      - name: 1. Download Latest Yak Engine
+      - name: 1. Download Latest Yak Engine & Chrome Plugin (Official Layout)
         id: fetch_bins
         run: |
-          mkdir -p bins
+          mkdir -p bins/scripts
           CDN_PRIMARY="https://yaklang.oss-accelerate.aliyuncs.com/yak"
           CDN_FALLBACK="https://oss-qn.yaklang.com/yak"
 
+          # 1. Fetch Engine Version
           curl -fsSL --retry 3 "${CDN_PRIMARY}/latest/version.txt" -o bins/engine-version.txt || \
           curl -fsSL --retry 3 "${CDN_FALLBACK}/latest/version.txt" -o bins/engine-version.txt
 
           YAK_VER=$(tr -d '[:space:]' < bins/engine-version.txt)
           echo "yak_version=${YAK_VER}" >> "$GITHUB_OUTPUT"
+          echo "Detected Yak Engine Version: ${YAK_VER}"
 
-          for BIN in \
-            yak_windows_amd64.exe \
-            yak_darwin_amd64 \
-            yak_darwin_arm64 \
-            yak_linux_amd64 \
-            yak_linux_arm64; do
+          # 2. Download Chrome Extension (Required by Official Build)
+          EXT_VER=$(curl -fsSL "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/latest-version.txt" | tr -d '[:space:]') || true
+          if [ -n "$EXT_VER" ]; then
+            curl -fsSL --retry 3 "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/yakit-chrome-extension-v${EXT_VER}.zip" \
+              -o "bins/scripts/google-chrome-plugin.zip" || true
+          fi
+
+          # 3. Linux Engines (Official build expects .zip files in bins/)
+          for ARCH in amd64 arm64; do
+            BIN="yak_linux_${ARCH}"
             curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN}" -o "bins/${BIN}" || \
             curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN}" -o "bins/${BIN}"
+            chmod +x "bins/${BIN}"
+            zip -j "bins/${BIN}.zip" "bins/${BIN}"
+            rm -f "bins/${BIN}"
           done
 
-          zip bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
+          # 4. Windows Normal Engine
+          curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
+          curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/yak_windows_amd64.exe" -o "bins/yak_windows_amd64.exe"
+          zip -j bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
           rm -f bins/yak_windows_amd64.exe
 
-          if curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
-             curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe"; then
-            zip bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
+          # 5. Windows Legacy Engine (Official name uses underscore: yak_windows_legacy_amd64.exe)
+          if curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows_legacy_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
+             curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/yak_windows_legacy_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
+             curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe"; then
+            zip -j bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
             rm -f bins/yak_windows_amd64.exe
           fi
 
-          chmod +x bins/yak_darwin_* bins/yak_linux_*
-          ls -lh bins/
+          # 6. macOS Engines & SHA256 files
+          for ARCH in amd64 arm64; do
+            BIN="yak_darwin_${ARCH}"
+            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN}" -o "bins/${BIN}" || \
+            curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN}" -o "bins/${BIN}"
+            chmod +x "bins/${BIN}"
+            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN}.sha256.txt" -o "bins/${BIN}.sha256.txt" || true
+          done
+
+          ls -lh bins/ bins/scripts/
 
       - name: 2. Upload Engine Artifacts
         uses: actions/upload-artifact@v4
@@ -98,25 +119,32 @@ jobs:
             platform: linux
           - os: macos-latest
             platform: mac
-          # (macOS Server ပြည့်နေလို့ မစောင့်ချင်ရင် အပေါ်က ၂ ကြောင်းကို ဖျက်/Comment ပိတ်ထားနိုင်ပါသည်)
 
     env:
-      CI: "true"
+      CI: ""
       NODE_OPTIONS: "--max-old-space-size=8192"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ENGINE_VERSION: ${{ needs.prepare-engine.outputs.yak_version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: 1. Determine Checkout Ref
+      - name: 1. Determine Checkout Ref & Version Tag
         id: ref_select
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TARGET="${GITHUB_REF_NAME}"
-          elif [[ -n "${{ inputs.target_ref }}" ]]; then
-            TARGET="${{ inputs.target_ref }}"
+            RAW_TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.tag_name }}" ]]; then
+            TARGET="${{ inputs.target_ref || 'english-edition' }}"
+            RAW_TAG="${{ inputs.tag_name }}"
           else
             TARGET="english-edition"
+            RAW_TAG="v$(date +'%Y.%m.%d')-en"
           fi
           echo "ref=${TARGET}" >> "$GITHUB_OUTPUT"
+          ENV_TAG="${RAW_TAG#v}"
+          echo "ENV_TAG=${ENV_TAG}" >> "$GITHUB_ENV"
+          echo "Building Ref: ${TARGET} with ENV_TAG: ${ENV_TAG}"
 
       - name: 2. Checkout English Edition Code
         uses: actions/checkout@v4
@@ -127,7 +155,7 @@ jobs:
       - name: 3. Setup Node.js 22 & Yarn
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.22.1'
 
       - name: 4. Ensure Yarn is Installed
         run: yarn --version || npm install -g yarn
@@ -136,7 +164,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfuse2t64 rpm || sudo apt-get install -y libfuse2 rpm
+          sudo apt-get install -y libfuse2t64 rpm zip || sudo apt-get install -y libfuse2 rpm zip
 
       - name: 6. Restore Yak Engine Binaries
         uses: actions/download-artifact@v4
@@ -144,7 +172,21 @@ jobs:
           name: yak-engine-bins
           path: bins/
 
-      - name: 7. Enforce English Default Language Safeguard
+      - name: 7. Prepare Binaries & Unpack Linux Zips if Needed by CLI
+        run: |
+          chmod +x bins/yak_darwin_* 2>/dev/null || true
+          # CLI direct mode သုံးပါက unzipped binary နှင့် zip နှစ်မျိုးလုံး အဆင်သင့်ရှိနေစေရန်
+          if [ -f "bins/yak_linux_amd64.zip" ] && [ ! -f "bins/yak_linux_amd64" ]; then
+            unzip -o bins/yak_linux_amd64.zip -d bins/ || true
+            chmod +x bins/yak_linux_amd64 || true
+          fi
+          if [ -f "bins/yak_linux_arm64.zip" ] && [ ! -f "bins/yak_linux_arm64" ]; then
+            unzip -o bins/yak_linux_arm64.zip -d bins/ || true
+            chmod +x bins/yak_linux_arm64 || true
+          fi
+          ls -lh bins/
+
+      - name: 8. Enforce English Default Language Safeguard
         run: |
           node -e '
             const fs = require("fs");
@@ -169,33 +211,39 @@ jobs:
             }
           '
 
-      - name: 8. Install, Build & Package all editions (Yakit, IRify, Memfit)
+      - name: 9. Install Dependencies
         run: |
-          chmod +x bins/yak_darwin_* bins/yak_linux_* 2>/dev/null || true
-          ls -lh bins/
           yarn config set network-timeout 300000
+          yarn install --ignore-engines
 
-          if [ -f "cli/cli.mjs" ]; then
-            yarn cli install
-            
-            # 1. Build & Pack Yakit
-            yarn cli build -v yakit --devtools
-            yarn cli pack -s ${{ matrix.platform }} -v yakit
-            
-            # 2. Build & Pack IRify
-            yarn cli build -v irify
-            yarn cli pack -s ${{ matrix.platform }} -v irify
-            
-            # 3. Build & Pack Memfit AI
-            yarn cli build -v memfit
-            yarn cli pack -s ${{ matrix.platform }} -v memfit
-          else
-            yarn install
-            yarn build-renders
-            yarn pack-${{ matrix.platform }}
-          fi
+      - name: 10. Build & Package All 3 Editions (Yakit, IRify, Memfit AI)
+        run: |
+          mkdir -p release dist
 
-      - name: 9. Upload OS Installer Artifacts
+          # Official buildPreScript.sh + CLI / Builder တွဲဖက်အသုံးပြုခြင်း
+          for PROD in yakit irify memfit; do
+            echo "======================================"
+            echo "Building Product: ${PROD} (${{ matrix.platform }})"
+            echo "======================================"
+
+            if [ -f "./packageScript/script/buildPreScript.sh" ]; then
+              chmod +x ./packageScript/script/buildPreScript.sh
+              ./packageScript/script/buildPreScript.sh "${PROD}" || true
+            fi
+
+            if [ -f "cli/cli.mjs" ]; then
+              if [ "${PROD}" = "yakit" ]; then
+                yarn cli build -v yakit --devtools
+              else
+                yarn cli build -v "${PROD}"
+              fi
+              yarn cli pack -s ${{ matrix.platform }} -v "${PROD}"
+            fi
+          done
+
+          ls -lh release/ dist/ || true
+
+      - name: 11. Upload OS Installer Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Yakit-English-${{ matrix.platform }}
@@ -215,7 +263,7 @@ jobs:
   # အဆင့် (၃) - ပြီးပြည့်စုံသော (၃) မျိုးခွဲ Release များကို GitHub သို့ တင်ခြင်း
   # ---------------------------------------------------------------------------
   publish-release:
-    name: Publish English Release
+    name: Publish English Release (Yakit, IRify, Memfit AI)
     needs: [prepare-engine, build-matrix]
     runs-on: ubuntu-latest
     steps:
@@ -237,7 +285,8 @@ jobs:
             FINAL_TAG="v$(date +'%Y.%m.%d')-en"
           fi
           echo "tag=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
-          ls -lh release-assets/
+          echo "=== Downloaded Release Assets ==="
+          find release-assets/ -type f -exec ls -lh {} +
 
       - name: 3. Publish Yakit Release
         uses: softprops/action-gh-release@v2
