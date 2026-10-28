@@ -1,6 +1,6 @@
 Change Type
 
-[ ] New feature (new page / new option / new capability)
+[ ] New feature (new page / new option / new capability) 
 [ ] Bug fix (fix for user-visible behavior)
 [ ] Documentation update
 [ ] Style / UI adjustment (no logical changes)
