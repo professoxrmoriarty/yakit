@@ -1,0 +1,81 @@
+name: Check Chinese Characters in Yakit
+
+on:
+  workflow_dispatch: # မိမိဘာသာ Manual Run ရန်
+
+jobs:
+  scan-chinese-chars:
+    name: Scan and Report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Scan for Chinese Characters
+        run: |
+          python3 - << 'EOF'
+          import os
+          import re
+
+          zh_char_re = re.compile(r'[\u4e00-\u9fff]')
+          
+          # စစ်ဆေးမည့် ဖိုင်အမျိုးအစားများ
+          target_exts = {".ts", ".tsx", ".js", ".jsx", ".json", ".go"}
+          # ချန်လှပ်ထားမည့် ဖိုဒါများ
+          ignore_dirs = {"node_modules", ".git", "dist", "build", "vendor"}
+          
+          total_files_with_zh = 0
+          total_zh_lines = 0
+          
+          report_lines = []
+          report_lines.append("| File Path | Lines with Chinese |")
+          report_lines.append("|---|---|")
+
+          print("Scanning files for Chinese characters...")
+
+          for root, dirs, files in os.walk("."):
+              # ချန်လှပ်ရမည့် ဖိုဒါများကို ဖယ်ထုတ်ခြင်း
+              dirs[:] = [d for d in dirs if d not in ignore_dirs]
+              
+              for f in files:
+                  ext = os.path.splitext(f)[1]
+                  if ext in target_exts:
+                      filepath = os.path.join(root, f)
+                      try:
+                          with open(filepath, "r", encoding="utf-8") as file:
+                              content = file.read()
+                          
+                          lines = content.split('\n')
+                          # တရုတ်စာပါသော စာကြောင်းအရေအတွက်ကို ရေတွက်ခြင်း
+                          zh_count_in_file = sum(1 for line in lines if zh_char_re.search(line))
+                          
+                          if zh_count_in_file > 0:
+                              total_files_with_zh += 1
+                              total_zh_lines += zh_count_in_file
+                              report_lines.append(f"| `{filepath}` | {zh_count_in_file} lines |")
+                      except Exception:
+                          pass
+          
+          print(f"Total files containing Chinese: {total_files_with_zh}")
+          print(f"Total lines containing Chinese: {total_zh_lines}")
+          
+          # GitHub Actions ၏ Summary Page တွင် Report ထုတ်ပေးခြင်း
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary_file:
+                  summary_file.write("### 📊 Chinese Characters Scan Report\n\n")
+                  summary_file.write(f"- **Total files with Chinese text:** {total_files_with_zh}\n")
+                  summary_file.write(f"- **Total lines with Chinese text:** {total_zh_lines}\n\n")
+                  
+                  if total_files_with_zh > 0:
+                      summary_file.write("<details><summary>👉 <b>Click to view affected files</b></summary>\n\n")
+                      summary_file.write("\n".join(report_lines))
+                      summary_file.write("\n\n</details>")
+                  else:
+                      summary_file.write("✅ **Great! No Chinese characters found in target files. The project is fully localized.**")
+          EOF
