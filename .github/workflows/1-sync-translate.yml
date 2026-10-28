@@ -1,97 +1,131 @@
-name: Sync Upstream & Auto-Translate (Full Stack & Verified)
+name: 1. Smart Sync & Progressive Translate (Resume & Cache Edition)
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # နေ့စဉ် မြန်မာစံတော်ချိန် နံနက် ၈:၃၀ တိုင်း အလိုအလျောက် Sync လုပ်မည်
+    # ၆ နာရီခြား တစ်ကြိမ် အလိုအလျောက် Run ပြီး ရပ်ထားသည့်နေရာမှ ဆက်ဘာသာပြန်ပေးမည်
+    - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
-      create_release_tag:
-        description: 'Sync ပြီးပါက Release Tag အသစ် တစ်ခါတည်း ထုတ်မည်လား? (true/false)'
+      force_release:
+        description: '၁၀၀% မပြီးသေးလည်း Release အတင်းထုတ်မည်လား? (true/false)'
         required: false
         default: 'false'
 
 permissions:
   contents: write
+  actions: write
 
 env:
   UPSTREAM_REPO: "https://github.com/yaklang/yakit.git"
-  UPSTREAM_BRANCH: "main"
+  UPSTREAM_BRANCH: "master"
   TARGET_BRANCH: "english-edition"
 
 jobs:
   sync-and-translate:
+    name: Smart Diff Sync & Progressive Translate
     runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check_release.outputs.should_release }}
+      release_tag: ${{ steps.check_release.outputs.release_tag }}
     steps:
       - name: 1. Checkout Fork Repository
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: 2. Configure Git & Fetch Upstream
+      - name: 2. Configure Git & Fetch Upstream Diffs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream ${{ env.UPSTREAM_REPO }} || true
-          git fetch upstream ${{ env.UPSTREAM_BRANCH }} --tags
+          git remote add upstream ${{ env.UPSTREAM_REPO }} 2>/dev/null || git remote set-url upstream ${{ env.UPSTREAM_REPO }}
+          git fetch upstream ${{ env.UPSTREAM_BRANCH }} --tags || git fetch upstream main --tags
 
-      - name: 3. Merge Upstream Changes (Smart Diff Sync & Preserve Assets)
+      - name: 3. Merge Upstream Diff Changes Only (Preserve Custom Assets & Cache)
         run: |
-          mkdir -p /tmp/backup
-          cp -r .github/workflows /tmp/backup/workflows
+          mkdir -p /tmp/backup/workflows
+          cp -r .github/workflows/* /tmp/backup/workflows/ 2>/dev/null || true
           if [ -f ".github/security_glossary.json" ]; then
             cp .github/security_glossary.json /tmp/backup/security_glossary.json
           fi
           if [ -f ".i18n_cache.json" ]; then
             cp .i18n_cache.json /tmp/backup/.i18n_cache.json
           fi
+          if [ -f "README.md" ]; then
+            cp README.md /tmp/backup/README.md
+          fi
+          if [ -f "README_EN.md" ]; then
+            cp README_EN.md /tmp/backup/README_EN.md
+          fi
 
-          # Upstream မှ အပြောင်းအလဲအသစ်များကို (Diff changes) သာ တိုက်ရိုက် Sync လုပ်မည်
-          if ! git merge upstream/${{ env.UPSTREAM_BRANCH }} -X theirs --allow-unrelated-histories --no-edit; then
+          UP_REF="upstream/${{ env.UPSTREAM_BRANCH }}"
+          if ! git rev-parse --verify "$UP_REF" >/dev/null 2>&1; then
+            UP_REF="upstream/main"
+          fi
+
+          # Repo တစ်ခုလုံးကို အစကပြန်မဆွဲဘဲ Upstream မှ ပြောင်းလဲသွားသော Diff များကိုသာ Merge လုပ်မည်
+          if ! git merge "$UP_REF" -X theirs --allow-unrelated-histories --no-edit; then
             git status --porcelain | awk '$1=="DU" || $1=="UD" {print $2}' | xargs -r git rm -f
             git checkout --theirs . || true
             git add -A
             git commit --no-edit || true
           fi
 
-          # ကျွန်ုပ်တို့၏ ကိုယ်ပိုင် workflows, glossary နှင့် cache များကို ပြန်ထည့်မည်
+          # ကိုယ်ပိုင် workflows, README, glossary နှင့် cache ဖိုင်များကို ပြန်ထည့်မည်
+          rm -rf .github/workflows/*
           mkdir -p .github/workflows
-          cp -r /tmp/backup/workflows/* .github/workflows/
+          cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
           if [ -f "/tmp/backup/security_glossary.json" ]; then
             cp /tmp/backup/security_glossary.json .github/security_glossary.json
           fi
           if [ -f "/tmp/backup/.i18n_cache.json" ]; then
             cp /tmp/backup/.i18n_cache.json .i18n_cache.json
           fi
+          if [ -f "/tmp/backup/README.md" ]; then
+            cp /tmp/backup/README.md README.md
+          fi
+          if [ -f "/tmp/backup/README_EN.md" ]; then
+            cp /tmp/backup/README_EN.md README_EN.md
+          fi
 
           if [ -n "$(git status --porcelain)" ]; then
-            git add .github/ .i18n_cache.json 2>/dev/null || true
-            git commit -m "chore(sync): smart merge upstream yaklang/yakit" || true
+            git add .github/ .i18n_cache.json README.md 2>/dev/null || true
+            git commit -m "chore(sync): merge upstream diff changes" || true
           fi
 
       - name: 4. Enforce English Default Language in i18n.ts
         run: |
-          I18N_FILE="app/renderer/src/main/src/i18n/i18n.ts"
-          if [ -f "$I18N_FILE" ]; then
-            sed -i "s/lng:.*'zh'/lng: localStorage.getItem('i18nextLng') || 'en'/g" "$I18N_FILE"
-            sed -i "s/fallbackLng:.*'zh'/fallbackLng: 'en'/g" "$I18N_FILE"
-          fi
-          if [ -f "README_EN.md" ]; then
-            cp README_EN.md README.md
-          fi
+          for I18N_FILE in \
+            "app/renderer/src/main/src/i18n/i18n.ts" \
+            "app/renderer/engine-link-startup/src/i18n/i18n.ts" \
+            "app/renderer/engine-link-startup/src/i18n.ts"; do
+            if [ -f "$I18N_FILE" ]; then
+              sed -i "s/lng:.*'zh'/lng: localStorage.getItem('i18nextLng') || 'en'/g" "$I18N_FILE"
+              sed -i "s/fallbackLng:.*'zh'/fallbackLng: 'en'/g" "$I18N_FILE"
+            fi
+          done
 
       - name: 5. Setup Node.js & TypeScript Compiler
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: 6. Install tsc, PyYAML & Translation Dependencies
+      - name: 6. Setup Python & Install Dependencies
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 7. Install tsc, PyYAML & Translation Libraries
         run: |
           npm install -g typescript
-          python3 -m pip install --upgrade pip deep-translator PyYAML
+          python3 -m pip install --upgrade pip deep-translator PyYAML openai
 
-      - name: 7. Progressive Translation (JSON Locales, TS/TSX, .yak Plugins & PoC YAMLs)
+      - name: 8. Progressive Translation (Stop on Limit, Save Cache & Resume)
+        id: translate
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: "https://openrouter.ai/api/v1"
         run: |
           python3 - << 'EOF'
           import os
@@ -108,6 +142,11 @@ jobs:
           GLOSSARY_FILE = ".github/security_glossary.json"
           META_KEY = "__glossary_snapshot__"
 
+          # တစ်ကြိမ် Run လျှင် အများဆုံး အချိန် ၄၅ မိနစ် သို့မဟုတ် အမှား ၅ ကြိမ်ဆက်တိုက်တက်ပါက ရပ်ပြီး Cache သိမ်းမည်
+          START_TIME = time.time()
+          MAX_RUNTIME_SECONDS = 45 * 60
+          MAX_CONSECUTIVE_FAILURES = 5
+
           IGNORE_STRINGS = {"微软雅黑", "宋体", "黑体", "苹方", "楷体", "仿宋"}
 
           translator = GoogleTranslator(source='zh-CN', target='en')
@@ -117,7 +156,7 @@ jobs:
           def has_zh(text):
               return bool(zh_char_re.search(str(text)))
 
-          # Load Security Glossary
+          # 1. Load Security Glossary
           exact_glossary = {}
           inline_glossary = {}
           post_fix_patterns = []
@@ -135,7 +174,7 @@ jobs:
 
           sorted_inline_keys = sorted(inline_glossary.keys(), key=len, reverse=True)
 
-          # Load Cache & Handle Glossary Updates
+          # 2. Load Existing Cache (ဘာသာပြန်ပြီးသားများကို ပြန်မပြန်ရန်)
           cache = {}
           if os.path.exists(CACHE_FILE):
               try:
@@ -157,6 +196,11 @@ jobs:
                   if k != META_KEY and any(term in k for term in changed_terms):
                       del cache[k]
 
+          def save_cache_checkpoint():
+              cache[META_KEY] = current_snapshot
+              with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+                  json.dump(cache, f, ensure_ascii=False, indent=2)
+
           def pre_process_glossary(text):
               stripped = text.strip()
               if stripped in exact_glossary:
@@ -176,12 +220,20 @@ jobs:
               out = re.sub(r'([(\[])\s+', r'\1', out)
               return multi_space_re.sub(' ', out).strip()
 
-          def batch_translate(texts):
+          limit_reached = False
+
+          def batch_translate(texts, stage_name=""):
+              global limit_reached
+              if limit_reached:
+                  return
+
+              # Cache ထဲတွင် မရှိသေးသော စာသားအသစ်များကိုသာ စစ်ထုတ်မည်
               unique_new = [
                   t for t in texts
                   if t not in cache and has_zh(t) and t.strip() not in IGNORE_STRINGS
               ]
               if not unique_new:
+                  print(f"[{stage_name}] All strings already in cache! Nothing new to translate.")
                   return
 
               mt_queue = []
@@ -192,42 +244,81 @@ jobs:
                   else:
                       mt_queue.append((orig, pre_text))
 
+              save_cache_checkpoint()
               if not mt_queue:
                   return
 
-              BATCH_SIZE = 35
+              print(f"[{stage_name}] Translating {len(mt_queue)} uncached strings...")
+              BATCH_SIZE = 30
+              consecutive_failures = 0
+
               for i in range(0, len(mt_queue), BATCH_SIZE):
+                  # အချိန်ကန့်သတ်ချက် သို့မဟုတ် Rate Limit ပြည့်သွားပါက ချက်ချင်းရပ်မည်
+                  if time.time() - START_TIME > MAX_RUNTIME_SECONDS:
+                      print("Time limit reached for this run! Pausing and saving cache checkpoint...")
+                      limit_reached = True
+                      break
+                  if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                      print("Rate limit reached! Pausing and saving cache checkpoint for next run...")
+                      limit_reached = True
+                      break
+
                   batch = mt_queue[i:i + BATCH_SIZE]
                   single_line = [(o, p) for o, p in batch if "\n" not in p]
                   multi_line = [(o, p) for o, p in batch if "\n" in p]
 
                   if single_line:
                       joined = "\n".join(p for _, p in single_line)
+                      batch_ok = False
                       for _ in range(3):
                           try:
                               trans_joined = translator.translate(joined)
-                              results = trans_joined.split("\n")
-                              if len(results) == len(single_line):
-                                  for (orig, _), res in zip(single_line, results):
-                                      cache[orig] = post_process_glossary(res)
-                                  break
-                              else:
-                                  for orig, pre_p in single_line:
-                                      res = translator.translate(pre_p) or pre_p
-                                      cache[orig] = post_process_glossary(res)
-                                  break
-                          except Exception:
-                              time.sleep(1.5)
+                              if trans_joined:
+                                  results = trans_joined.split("\n")
+                                  if len(results) == len(single_line):
+                                      for (orig, _), res in zip(single_line, results):
+                                          cache[orig] = post_process_glossary(res)
+                                      batch_ok = True
+                                      consecutive_failures = 0
+                                      break
+                                  else:
+                                      for orig, pre_p in single_line:
+                                          res = translator.translate(pre_p)
+                                          if res and not has_zh(res):
+                                              cache[orig] = post_process_glossary(res)
+                                      batch_ok = True
+                                      consecutive_failures = 0
+                                      break
+                          except Exception as e:
+                              time.sleep(2.0)
+
+                      if not batch_ok:
+                          consecutive_failures += 1
 
                   for orig, pre_p in multi_line:
+                      if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                          limit_reached = True
+                          break
                       try:
-                          res = translator.translate(pre_p) or pre_p
-                          cache[orig] = post_process_glossary(res)
+                          res = translator.translate(pre_p)
+                          if res and not has_zh(res):
+                              cache[orig] = post_process_glossary(res)
+                              consecutive_failures = 0
+                          else:
+                              consecutive_failures += 1
                       except Exception:
-                          cache[orig] = post_process_glossary(pre_p)
+                          consecutive_failures += 1
+                          time.sleep(1.5)
+
+                  # Batch တစ်ခုပြီးတိုင်း Cache ဖိုင်ထဲသို့ ချက်ချင်းသိမ်းဆည်းမည် (လုံးဝမပျောက်ပျက်စေရန်)
+                  save_cache_checkpoint()
+                  done_count = min(i + BATCH_SIZE, len(mt_queue))
+                  print(f"[{stage_name}] Progress: {done_count}/{len(mt_queue)} saved to cache.")
                   time.sleep(0.5)
 
+          # ==========================================
           # 1. Sync & Translate JSON Locales
+          # ==========================================
           def collect_json_zh(zh_obj, en_obj, collected):
               for k, v in zh_obj.items():
                   if isinstance(v, dict):
@@ -246,10 +337,9 @@ jobs:
                       if apply_json_zh(v, en_obj[k]):
                           changed = True
                   elif isinstance(v, str) and has_zh(v):
-                      if k not in en_obj or has_zh(en_obj[k]) or any(t in v for t in changed_terms):
-                          new_val = cache.get(v, v)
-                          if en_obj.get(k) != new_val:
-                              en_obj[k] = new_val
+                      if v in cache and not has_zh(cache[v]):
+                          if en_obj.get(k) != cache[v]:
+                              en_obj[k] = cache[v]
                               changed = True
               return changed
 
@@ -275,13 +365,15 @@ jobs:
                   collect_json_zh(zh_data, en_data, json_zh_strings)
                   json_pairs.append((en_path, zh_data, en_data))
 
-              batch_translate(list(json_zh_strings))
+              batch_translate(list(json_zh_strings), "JSON Locales")
               for en_path, zh_data, en_data in json_pairs:
                   if apply_json_zh(zh_data, en_data):
                       with open(en_path, 'w', encoding='utf-8') as f:
                           json.dump(en_data, f, ensure_ascii=False, indent=2)
 
+          # ==========================================
           # 2. Scan & Translate Source Files (.ts, .tsx, .yak)
+          # ==========================================
           TOKEN_RE = re.compile(
               r'(//[^\n]*|/\*[\s\S]*?\*/)'
               r"|('(?:\\.|[^'\\\n])*')"
@@ -327,7 +419,7 @@ jobs:
                           if file_has_target:
                               source_files.append(full_path)
 
-          batch_translate(list(source_zh_strings))
+          batch_translate(list(source_zh_strings), "Source TS/TSX/Yak")
 
           def sanitize_for_quote(text, quote_char):
               text = text.replace('\r', ' ').replace('\n', ' ')
@@ -339,6 +431,7 @@ jobs:
                   text = text.replace('`', "'").replace('${', '\\${')
               return text
 
+          # Cache ထဲတွင် ရရှိပြီးသား ဘာသာပြန်ချက်များကို ကုဒ်ထဲသို့ အစားထိုးပေးမည်
           for full_path in source_files:
               with open(full_path, 'r', encoding='utf-8') as f:
                   content = f.read()
@@ -352,14 +445,14 @@ jobs:
                           return token
                       quote_char = token[0]
                       inner = token[1:-1]
-                      if inner.strip() in IGNORE_STRINGS or inner not in cache:
+                      if inner.strip() in IGNORE_STRINGS or inner not in cache or has_zh(cache[inner]):
                           return token
                       trans = sanitize_for_quote(cache[inner], quote_char)
                       return f"{quote_char}{trans}{quote_char}"
                   if jsx:
                       inner_raw = jsx[1:-1]
                       inner_stripped = inner_raw.strip()
-                      if not inner_stripped or inner_stripped not in cache:
+                      if not inner_stripped or inner_stripped not in cache or has_zh(cache[inner_stripped]):
                           return jsx
                       trans = cache[inner_stripped].replace('<', '&lt;').replace('>', '&gt;')
                       leading_ws = inner_raw[:len(inner_raw) - len(inner_raw.lstrip())]
@@ -372,7 +465,9 @@ jobs:
                   with open(full_path, 'w', encoding='utf-8') as f:
                       f.write(new_content)
 
-          # 3. Scan & Translate PoC YAML Templates (.yml, .yaml)
+          # ==========================================
+          # 3. Scan & Translate PoC YAML Templates
+          # ==========================================
           yaml_files = []
           yaml_zh_strings = set()
           for root, dirs, files in os.walk("."):
@@ -383,7 +478,7 @@ jobs:
                       try:
                           with open(full_path, 'r', encoding='utf-8') as f:
                               raw_yaml = f.read()
-                      except:
+                      except Exception:
                           continue
                       if not has_zh(raw_yaml):
                           continue
@@ -401,10 +496,10 @@ jobs:
                                       if isinstance(val, str) and has_zh(val):
                                           yaml_zh_strings.add(val)
                               yaml_files.append(full_path)
-                      except:
+                      except Exception:
                           continue
 
-          batch_translate(list(yaml_zh_strings))
+          batch_translate(list(yaml_zh_strings), "PoC YAMLs")
 
           for full_path in yaml_files:
               try:
@@ -415,28 +510,46 @@ jobs:
                   modified = False
                   for field in ['name', 'description', 'solution', 'title', 'summary', 'author', 'reference', 'vuln-id']:
                       val = data.get(field)
-                      if isinstance(val, str) and val in cache:
+                      if isinstance(val, str) and val in cache and not has_zh(cache[val]):
                           data[field] = cache[val]
                           modified = True
                   info_block = data.get('info')
                   if isinstance(info_block, dict):
                       for field in ['name', 'description', 'solution', 'author', 'summary']:
                           val = info_block.get(field)
-                          if isinstance(val, str) and val in cache:
+                          if isinstance(val, str) and val in cache and not has_zh(cache[val]):
                               info_block[field] = cache[val]
                               modified = True
                   if modified:
                       with open(full_path, 'w', encoding='utf-8') as f:
                           yaml.safe_dump(data, f, allow_unicode=False, sort_keys=False)
-              except:
+              except Exception:
                   pass
 
-          cache[META_KEY] = current_snapshot
-          with open(CACHE_FILE, 'w', encoding='utf-8') as f:
-              json.dump(cache, f, ensure_ascii=False, indent=2)
+          save_cache_checkpoint()
+
+          # ==========================================
+          # 4. ဘာသာပြန်ရန် ကျန်ရှိသေးခြင်း ရှိ/မရှိ စစ်ဆေးခြင်း (Completion Gate)
+          # ==========================================
+          all_required = set()
+          for s in (json_zh_strings | source_zh_strings | yaml_zh_strings):
+              if has_zh(s) and s.strip() not in IGNORE_STRINGS:
+                  all_required.add(s)
+
+          remaining = [s for s in all_required if s not in cache or has_zh(cache[s])]
+          is_complete = (len(remaining) == 0) and (not limit_reached)
+
+          print(f"=== Translation Summary ===")
+          print(f"Total cached translations: {len(cache)}")
+          print(f"Remaining untranslated strings: {len(remaining)}")
+          print(f"Is 100% Complete: {is_complete}")
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"is_complete={'true' if is_complete else 'false'}\n")
+              f.write(f"remaining_count={len(remaining)}\n")
           EOF
 
-      - name: 8. Safety Check (tsc Syntax & JSON Validation + Auto-Revert)
+      - name: 9. Safety Check (tsc Syntax & JSON Validation + Auto-Revert)
         env:
           UPSTREAM_BRANCH: ${{ env.UPSTREAM_BRANCH }}
         run: |
@@ -447,7 +560,7 @@ jobs:
           const { execFileSync } = require('child_process');
           const ts = require('typescript');
 
-          const upstreamRef = `upstream/${process.env.UPSTREAM_BRANCH || 'main'}`;
+          const upstreamRef = `upstream/${process.env.UPSTREAM_BRANCH || 'master'}`;
           const revertedRecords = [];
 
           function git(args) {
@@ -540,43 +653,67 @@ jobs:
             const action = revertFile(rel, upstreamRef);
             revertedRecords.push({ file: rel, code: info.code, reason: info.reason, action });
           }
-
-          if (process.env.GITHUB_STEP_SUMMARY) {
-            let md = `### 🛡️ Translation Safety Check Report\n\n`;
-            md += `- **Scanned TypeScript/Plugin Files:** ${tsFiles.length}\n`;
-            md += `- **Scanned JSON Locales & YAML PoCs:** ${jsonFiles.length}\n`;
-            md += `- **Auto-Reverted Files:** ${revertedRecords.length}\n\n`;
-            if (revertedRecords.length > 0) {
-              md += `| File | Error Code | Diagnostic | Recovery Action |\n`;
-              md += `| :--- | :--- | :--- | :--- |\n`;
-              for (const r of revertedRecords) {
-                md += `| \`${r.file}\` | \`${r.code}\` | ${r.reason.replace(/\|/g, '\\|')} | ${r.action} |\n`;
-              }
-            }
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
-          }
           EOF
 
-      - name: 9. Commit and Push Synced Changes
+      - name: 10. Commit and Save Progress to Repository
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            git add -A
-            git commit -m "chore(i18n): smart sync upstream and translate with security glossary"
+          git add -f .i18n_cache.json .github/ 2>/dev/null || true
+          git add -A
+          if ! git diff --cached --quiet; then
+            if [ "${{ steps.translate.outputs.is_complete }}" == "true" ]; then
+              git commit -m "feat(i18n): 100% translation complete and verified"
+            else
+              git commit -m "chore(i18n): save translation progress (${{ steps.translate.outputs.remaining_count }} remaining) [skip ci]"
+            fi
+            git push origin ${{ env.TARGET_BRANCH }} --force
           fi
 
-          AHEAD_COUNT=$(git rev-list --count origin/${{ env.TARGET_BRANCH }}..HEAD 2>/dev/null || echo "1")
-          if [ "$AHEAD_COUNT" -gt 0 ]; then
-            git push origin ${{ env.TARGET_BRANCH }}
-            echo "Successfully pushed $AHEAD_COUNT verified commit(s)."
+      - name: 11. Check Completion & Prepare Release Tag
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # ဘာသာပြန်ခြင်း ၁၀၀% မပြီးသေးပါက (သို့မဟုတ် force_release မဟုတ်ပါက) Release လုံးဝမထုတ်သေးပါ
+          if [ "${{ steps.translate.outputs.is_complete }}" != "true" ] && [ "${{ inputs.force_release }}" != "true" ]; then
+            echo "Translation still in progress (${{ steps.translate.outputs.remaining_count }} strings left). Skipping release until 100% done."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          UPSTREAM_LATEST=$(gh api repos/yaklang/yakit/releases/latest --jq '.tag_name' 2>/dev/null || true)
+          if [ -z "$UPSTREAM_LATEST" ] || [ "$UPSTREAM_LATEST" == "null" ]; then
+            UPSTREAM_LATEST=$(gh api 'repos/yaklang/yakit/releases?per_page=1' --jq '.[0].tag_name' 2>/dev/null || true)
+          fi
+          if [ -z "$UPSTREAM_LATEST" ] || [ "$UPSTREAM_LATEST" == "null" ]; then
+            UPSTREAM_LATEST="v$(date +'%Y.%m.%d')"
+          fi
+
+          EN_TAG="${UPSTREAM_LATEST}-en"
+          RELEASE_EXISTS="false"
+          if gh release view "${EN_TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            RELEASE_EXISTS="true"
+          fi
+
+          if [ "${RELEASE_EXISTS}" == "false" ] || [ "${{ inputs.force_release }}" == "true" ]; then
+            git tag -f "${EN_TAG}" HEAD
+            git push origin "refs/tags/${EN_TAG}" --force
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${EN_TAG}" >> "$GITHUB_OUTPUT"
           else
-            echo "Already up-to-date with upstream."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${EN_TAG}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 10. Trigger Multi-Product Build & Release
-        if: steps.translate.outputs.is_complete == 'true' || inputs.force_release == true
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: release-en.yml
-          ref: ${{ env.TARGET_BRANCH }}
-          inputs:'{"tag_name":"v$(date +'%Y.%m.%d')-en", "target_ref": "${{ env.TARGET_BRANCH }}"}'
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+  # ---------------------------------------------------------------------------
+  # Job 2: ဘာသာပြန်ခြင်း ၁၀၀% ပြီးဆုံးမှသာ Release Workflow ကို အလိုအလျောက် နှိုးမည်
+  # ---------------------------------------------------------------------------
+  trigger-english-build:
+    name: Auto-Trigger Multi-OS English Release (Yakit, IRify, Memfit)
+    needs: sync-and-translate
+    if: needs.sync-and-translate.outputs.should_release == 'true'
+    uses: ./.github/workflows/release-en.yml
+    with:
+      tag_name: ${{ needs.sync-and-translate.outputs.release_tag }}
+      target_ref: 'english-edition'
+    secrets: inherit
