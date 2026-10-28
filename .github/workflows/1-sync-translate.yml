@@ -2,12 +2,11 @@ name: 1. Smart Sync & Progressive Translate (Resume & Cache Edition)
 
 on:
   schedule:
-    # ၆ နာရီခြား တစ်ကြိမ် အလိုအလျောက် Run ပြီး ရပ်ထားသည့်နေရာမှ ဆက်ဘာသာပြန်ပေးမည်
     - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       force_release:
-        description: '၁၀၀% မပြီးသေးလည်း Release အတင်းထုတ်မည်လား? (true/false)'
+        description: '၁၀၀% မပြီးသေး也没 Release အတင်းထုတ်မည်လား? (true/false)'
         required: false
         default: 'false'
 
@@ -64,7 +63,6 @@ jobs:
             UP_REF="upstream/main"
           fi
 
-          # Repo တစ်ခုလုံးကို အစကပြန်မဆွဲဘဲ Upstream မှ ပြောင်းလဲသွားသော Diff များကိုသာ Merge လုပ်မည်
           if ! git merge "$UP_REF" -X theirs --allow-unrelated-histories --no-edit; then
             git status --porcelain | awk '$1=="DU" || $1=="UD" {print $2}' | xargs -r git rm -f
             git checkout --theirs . || true
@@ -72,7 +70,6 @@ jobs:
             git commit --no-edit || true
           fi
 
-          # ကိုယ်ပိုင် workflows, README, glossary နှင့် cache ဖိုင်များကို ပြန်ထည့်မည်
           rm -rf .github/workflows/*
           mkdir -p .github/workflows
           cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
@@ -142,7 +139,6 @@ jobs:
           GLOSSARY_FILE = ".github/security_glossary.json"
           META_KEY = "__glossary_snapshot__"
 
-          # တစ်ကြိမ် Run လျှင် အများဆုံး အချိန် ၄၅ မိနစ် သို့မဟုတ် အမှား ၅ ကြိမ်ဆက်တိုက်တက်ပါက ရပ်ပြီး Cache သိမ်းမည်
           START_TIME = time.time()
           MAX_RUNTIME_SECONDS = 45 * 60
           MAX_CONSECUTIVE_FAILURES = 5
@@ -156,7 +152,6 @@ jobs:
           def has_zh(text):
               return bool(zh_char_re.search(str(text)))
 
-          # 1. Load Security Glossary
           exact_glossary = {}
           inline_glossary = {}
           post_fix_patterns = []
@@ -174,7 +169,6 @@ jobs:
 
           sorted_inline_keys = sorted(inline_glossary.keys(), key=len, reverse=True)
 
-          # 2. Load Existing Cache (ဘာသာပြန်ပြီးသားများကို ပြန်မပြန်ရန်)
           cache = {}
           if os.path.exists(CACHE_FILE):
               try:
@@ -227,7 +221,6 @@ jobs:
               if limit_reached:
                   return
 
-              # Cache ထဲတွင် မရှိသေးသော စာသားအသစ်များကိုသာ စစ်ထုတ်မည်
               unique_new = [
                   t for t in texts
                   if t not in cache and has_zh(t) and t.strip() not in IGNORE_STRINGS
@@ -253,13 +246,12 @@ jobs:
               consecutive_failures = 0
 
               for i in range(0, len(mt_queue), BATCH_SIZE):
-                  # အချိန်ကန့်သတ်ချက် သို့မဟုတ် Rate Limit ပြည့်သွားပါက ချက်ချင်းရပ်မည်
                   if time.time() - START_TIME > MAX_RUNTIME_SECONDS:
-                      print("Time limit reached for this run! Pausing and saving cache checkpoint...")
+                      print("Time limit reached! Pausing and saving cache checkpoint...")
                       limit_reached = True
                       break
                   if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                      print("Rate limit reached! Pausing and saving cache checkpoint for next run...")
+                      print("Rate limit reached! Pausing and saving cache checkpoint...")
                       limit_reached = True
                       break
 
@@ -289,7 +281,7 @@ jobs:
                                       batch_ok = True
                                       consecutive_failures = 0
                                       break
-                          except Exception as e:
+                          except Exception:
                               time.sleep(2.0)
 
                       if not batch_ok:
@@ -310,15 +302,17 @@ jobs:
                           consecutive_failures += 1
                           time.sleep(1.5)
 
-                  # Batch တစ်ခုပြီးတိုင်း Cache ဖိုင်ထဲသို့ ချက်ချင်းသိမ်းဆည်းမည် (လုံးဝမပျောက်ပျက်စေရန်)
                   save_cache_checkpoint()
                   done_count = min(i + BATCH_SIZE, len(mt_queue))
                   print(f"[{stage_name}] Progress: {done_count}/{len(mt_queue)} saved to cache.")
                   time.sleep(0.5)
 
-          # ==========================================
+          # Initialize collections safely
+          json_zh_strings = set()
+          source_zh_strings = set()
+          yaml_zh_strings = set()
+
           # 1. Sync & Translate JSON Locales
-          # ==========================================
           def collect_json_zh(zh_obj, en_obj, collected):
               for k, v in zh_obj.items():
                   if isinstance(v, dict):
@@ -345,9 +339,7 @@ jobs:
 
           if os.path.exists(ZH_DIR):
               os.makedirs(EN_DIR, exist_ok=True)
-              json_zh_strings = set()
               json_pairs = []
-
               for fname in sorted(os.listdir(ZH_DIR)):
                   if not fname.endswith(".json"):
                       continue
@@ -371,9 +363,7 @@ jobs:
                       with open(en_path, 'w', encoding='utf-8') as f:
                           json.dump(en_data, f, ensure_ascii=False, indent=2)
 
-          # ==========================================
           # 2. Scan & Translate Source Files (.ts, .tsx, .yak)
-          # ==========================================
           TOKEN_RE = re.compile(
               r'(//[^\n]*|/\*[\s\S]*?\*/)'
               r"|('(?:\\.|[^'\\\n])*')"
@@ -383,8 +373,6 @@ jobs:
           )
 
           source_files = []
-          source_zh_strings = set()
-
           for base_dir in SRC_DIRS:
               if not os.path.exists(base_dir):
                   continue
@@ -431,7 +419,6 @@ jobs:
                   text = text.replace('`', "'").replace('${', '\\${')
               return text
 
-          # Cache ထဲတွင် ရရှိပြီးသား ဘာသာပြန်ချက်များကို ကုဒ်ထဲသို့ အစားထိုးပေးမည်
           for full_path in source_files:
               with open(full_path, 'r', encoding='utf-8') as f:
                   content = f.read()
@@ -465,11 +452,8 @@ jobs:
                   with open(full_path, 'w', encoding='utf-8') as f:
                       f.write(new_content)
 
-          # ==========================================
           # 3. Scan & Translate PoC YAML Templates
-          # ==========================================
           yaml_files = []
-          yaml_zh_strings = set()
           for root, dirs, files in os.walk("."):
               dirs[:] = [d for d in dirs if d not in {'node_modules', 'dist', '.git', 'app'}]
               for file in files:
@@ -528,9 +512,6 @@ jobs:
 
           save_cache_checkpoint()
 
-          # ==========================================
-          # 4. ဘာသာပြန်ရန် ကျန်ရှိသေးခြင်း ရှိ/မရှိ စစ်ဆေးခြင်း (Completion Gate)
-          # ==========================================
           all_required = set()
           for s in (json_zh_strings | source_zh_strings | yaml_zh_strings):
               if has_zh(s) and s.strip() not in IGNORE_STRINGS:
@@ -673,7 +654,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # ဘာသာပြန်ခြင်း ၁၀၀% မပြီးသေးပါက (သို့မဟုတ် force_release မဟုတ်ပါက) Release လုံးဝမထုတ်သေးပါ
           if [ "${{ steps.translate.outputs.is_complete }}" != "true" ] && [ "${{ inputs.force_release }}" != "true" ]; then
             echo "Translation still in progress (${{ steps.translate.outputs.remaining_count }} strings left). Skipping release until 100% done."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
@@ -705,9 +685,6 @@ jobs:
             echo "release_tag=${EN_TAG}" >> "$GITHUB_OUTPUT"
           fi
 
-  # ---------------------------------------------------------------------------
-  # Job 2: ဘာသာပြန်ခြင်း ၁၀၀% ပြီးဆုံးမှသာ Release Workflow ကို အလိုအလျောက် နှိုးမည်
-  # ---------------------------------------------------------------------------
   trigger-english-build:
     name: Auto-Trigger Multi-OS English Release (Yakit, IRify, Memfit)
     needs: sync-and-translate
