@@ -29,56 +29,73 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Configure Git & Smart Patch Sync
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # [၁] ကိုယ်ပိုင်ဖိုင်များနှင့် Cache များကို လုံခြုံစွာ Backup ယူမည်
-          mkdir -p /tmp/backup
-          cp -r .github/workflows /tmp/backup/workflows 2>/dev/null || true
-          if [ -f "README.md" ]; then cp README.md /tmp/backup/README.md; fi
-          if [ -f ".i18n_ts_cache.json" ]; then cp .i18n_ts_cache.json /tmp/backup/.i18n_ts_cache.json; fi
-          if [ -f "security_glossary.json" ]; then cp security_glossary.json /tmp/backup/security_glossary.json; fi
-
-          # [၂] Upstream ကို Remote အဖြစ် ချိတ်ဆက်ပြီး Change Log များကို ဖမ်းယူမည်
-          git remote add upstream "${{ env.UPSTREAM_REPO }}" 2>/dev/null || git remote set-url upstream "${{ env.UPSTREAM_REPO }}"
-          git fetch upstream "${{ env.UPSTREAM_BRANCH }}"
-
-          # Target Branch သို့မဟုတ် Master သို့ Checkout ဝင်မည်
-          git checkout -B "${{ env.TARGET_BRANCH }}" origin/"${{ env.TARGET_BRANCH }}" 2>/dev/null || git checkout -b "${{ env.TARGET_BRANCH }}"
-
-          # [၃] အပြည့်အစုံ Overwrite လုပ်မည့်အစား Upstream ၏ အပြောင်းအလဲများကို Merge (သို့) Patch ဖြင့် ပေါင်းထည့်မည်
-          git merge upstream/"{{"{ env.UPSTREAM_BRANCH }"}} --no-edit --allow-unrelated-histories || echo "Merge conflict handled or skipped"
-
-          # [၄] Protected ဖိုင်များကို မူလအခြေအနေသို့ ပြန်လည်ဖော်ဆောင်မည် (Upstream က လာမထိစေရန်)
-          rm -rf .github/workflows
-          mkdir -p .github/workflows
-          cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
-          if [ -f "/tmp/backup/README.md" ]; then cp /tmp/backup/README.md README.md; fi
-          if [ -f "/tmp/backup/.i18n_ts_cache.json" ]; then cp /tmp/backup/.i18n_ts_cache.json .i18n_ts_cache.json; fi
-          if [ -f "/tmp/backup/security_glossary.json" ]; then cp /tmp/backup/security_glossary.json security_glossary.json; fi
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Python Dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install openai
+          pip install openai requests
 
-      - name: Progressive Translation & Patch Update Script
+      - name: Run Smart Sync & Progressive Translation
         id: translate
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_BASE_URL: "https://openrouter.ai/api/v1"
+          UPSTREAM_REPO: ${{ env.UPSTREAM_REPO }}
+          UPSTREAM_BRANCH: ${{ env.UPSTREAM_BRANCH }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: |
           python3 - << 'EOF'
-          import os, re, time, json
+          import os, re, time, json, subprocess
           from openai import OpenAI
 
+          print("=== Step 1: Configuring Git & Smart Sync ==")
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+          subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+
+          # Backup protected files
+          os.makedirs("/tmp/backup", exist_ok=True)
+          if os.path.exists(".github/workflows"):
+              subprocess.run(["cp", "-r", ".github/workflows", "/tmp/backup/workflows"])
+          if os.path.exists("README.md"):
+              subprocess.run(["cp", "README.md", "/tmp/backup/README.md"])
+          if os.path.exists(".i18n_ts_cache.json"):
+              subprocess.run(["cp", ".i18n_ts_cache.json", "/tmp/backup/.i18n_ts_cache.json"])
+          if os.path.exists("security_glossary.json"):
+              subprocess.run(["cp", "security_glossary.json", "/tmp/backup/security_glossary.json"])
+
+          # Setup upstream & fetch
+          upstream_repo = os.environ.get("UPSTREAM_REPO")
+          upstream_branch = os.environ.get("UPSTREAM_BRANCH")
+          target_branch = os.environ.get("TARGET_BRANCH")
+
+          subprocess.run(["git", "remote", "add", "upstream", upstream_repo], capture_output=True)
+          subprocess.run(["git", "remote", "set-url", "upstream", upstream_repo], check=True)
+          subprocess.run(["git", "fetch", "upstream", upstream_branch], check=True)
+
+          # Checkout target branch
+          res = subprocess.run(["git", "checkout", "-B", target_branch, f"origin/{target_branch}"], capture_output=True)
+          if res.returncode != 0:
+              subprocess.run(["git", "checkout", "-b", target_branch], check=True)
+
+          # Merge upstream changes gently
+          subprocess.run(["git", "merge", f"upstream/{upstream_branch}", "--no-edit", "--allow-unrelated-histories"], capture_output=True)
+
+          # Restore protected files so upstream won't overwrite them
+          os.makedirs(".github/workflows", exist_ok=True)
+          if os.path.exists("/tmp/backup/workflows"):
+              subprocess.run(["cp", "-r", "/tmp/backup/workflows/.", ".github/workflows/"])
+          if os.path.exists("/tmp/backup/README.md"):
+              subprocess.run(["cp", "/tmp/backup/README.md", "README.md"])
+          if os.path.exists("/tmp/backup/.i18n_ts_cache.json"):
+              subprocess.run(["cp", "/tmp/backup/.i18n_ts_cache.json", ".i18n_ts_cache.json"])
+          if os.path.exists("/tmp/backup/security_glossary.json"):
+              subprocess.run(["cp", "/tmp/backup/security_glossary.json", "security_glossary.json"])
+
+          print("=== Step 2: Progressive Translation Scan ==")
           client = OpenAI(
               api_key=os.environ.get("AI_API_KEY"),
               base_url=os.environ.get("AI_BASE_URL")
@@ -121,8 +138,7 @@ jobs:
           for root, dirs, files in os.walk("."):
               dirs[:] = [d for d in dirs if d not in ignore_dirs]
               for f in files:
-                  ext = os.path.splitext(f)[1]
-                  if ext in target_exts:
+                  if os.path.splitext(f)[1] in target_exts:
                       filepath = os.path.join(root, f)
                       try:
                           with open(filepath, "r", encoding="utf-8") as file:
@@ -137,7 +153,7 @@ jobs:
                           continue
 
           strings_list = list(strings_to_translate)
-          print(f"Pending new strings from upstream diff: {len(strings_list)}")
+          print(f"Pending strings to translate: {len(strings_list)}")
 
           is_complete = True
           limit_hit = False
@@ -146,7 +162,7 @@ jobs:
               translated_count = 0
               for chunk in chunk_list(strings_list, 15):
                   if limit_hit: break
-                  system_prompt = "You are a software localization expert. Translate the following JSON array of Chinese strings into English. Retain any HTML/JSX tags and variables. Respond ONLY with a valid JSON array of strings in the exact same order."
+                  system_prompt = "You are a software localization expert. Translate the following JSON array of Chinese strings into English. Retain HTML/JSX tags and variables. Respond ONLY with a valid JSON array of strings in the exact same order."
                   user_prompt = json.dumps(chunk, ensure_ascii=False)
                   
                   success = False
@@ -188,7 +204,7 @@ jobs:
               f.write(f"is_complete={'true' if is_complete else 'false'}\n")
 
           if is_complete:
-              print("Applying translations to files...")
+              print("Applying translations to source code...")
               for filepath in ts_files:
                   try:
                       with open(filepath, "r", encoding="utf-8") as file:
