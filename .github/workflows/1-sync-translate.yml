@@ -584,10 +584,14 @@ jobs:
 
           function checkTsSyntax(filesToCheck) {
             if (filesToCheck.length === 0) return new Map();
+            
+            // ts.ScriptTarget error မတက်စေရန် လုံခြုံသော target ကို အသုံးပြုခြင်း
+            const targetVersion = (ts.ScriptTarget && ts.ScriptTarget.Latest) ? ts.ScriptTarget.Latest : 99;
+
             const compilerOptions = {
-              target: ts.ScriptTarget.ESNext,
-              module: ts.ModuleKind.ESNext,
-              jsx: ts.JsxEmit.Preserve,
+              target: targetVersion,
+              module: (ts.ModuleKind && ts.ModuleKind.ESNext) ? ts.ModuleKind.ESNext : 99,
+              jsx: (ts.JsxEmit && ts.JsxEmit.Preserve) ? ts.JsxEmit.Preserve : 1,
               experimentalDecorators: true,
               allowJs: true,
               noEmit: true,
@@ -634,6 +638,8 @@ jobs:
             const action = revertFile(rel, upstreamRef);
             revertedRecords.push({ file: rel, code: info.code, reason: info.reason, action });
           }
+
+          console.log(`Safety check completed. Reverted files due to syntax error: ${revertedRecords.length}`);
           EOF
 
       - name: 10. Commit and Save Progress to Repository
