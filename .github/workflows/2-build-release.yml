@@ -62,7 +62,6 @@ jobs:
             sed -i.bak "s/lng:.*'zh'/lng: localStorage.getItem('i18nextLng') || 'en'/g" "$I18N_FILE"
             sed -i.bak "s/fallbackLng:.*'zh'/fallbackLng: 'en'/g" "$I18N_FILE"
             rm -f "${I18N_FILE}.bak"
-            echo "Successfully patched i18n.ts to default to English."
           fi
 
       - name: 5. Install Linux Build Dependencies
@@ -71,91 +70,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libnss3-dev libgdk-pixbuf2.0-dev libgtk-3-dev libxss-dev libasound2-dev rpm
 
-      - name: 6. Install Dependencies & Auto-Detect Build Script
+      - name: 6. Install Dependencies & Build Workspace
         shell: bash
         run: |
           yarn config set network-timeout 300000
           yarn install --ignore-engines
-          
-          # Workspace တစ်ခုလုံးကို Build လုပ်ခြင်း (သို့မဟုတ် app build)
+          # Monorepo workspace build ကို ခေါ်ယူခြင်း
           yarn run build || yarn workspaces run build || true
-          
-          echo "=== Available scripts in package.json ==="
-          node -e "console.log(Object.keys(require('./package.json').scripts || {}))"
 
-          # package.json ထဲရှိ scripts များကို စစ်ဆေးပြီး ရှိသည့် build command ကို အလိုအလျောက် Run မည်
-          PLATFORM="${{ matrix.platform }}"
-          node - << 'EOF'
-          const { execSync } = require('child_process');
-          const pkg = require('./package.json');
-          const scripts = pkg.scripts || {};
-          const platform = process.env.PLATFORM;
-
-          function run(cmd) {
-            console.log(`>>> Running: ${cmd}`);
-            execSync(cmd, { stdio: 'inherit' });
-          }
-
-          // 1. Frontend / Renderer Build စစ်ဆေးခြင်း
-          const prebuildCandidates = ['build:renderer', 'build:web', 'build:front', 'compile', 'prepare-build'];
-          for (const s of prebuildCandidates) {
-            if (scripts[s]) {
-              run(`yarn run ${s}`);
-            }
-          }
-
-          // 2. Main / OS-specific Build စစ်ဆေးခြင်း
-          const osScriptCandidates = [
-            `build:${platform}`,
-            `dist:${platform}`,
-            `pack:${platform}`,
-            `release:${platform}`,
-            `electron:build:${platform}`,
-            'build',
-            'dist',
-            'electron:build',
-            'package'
-          ];
-
-          let executed = false;
-          for (const s of osScriptCandidates) {
-            if (scripts[s]) {
-              run(`yarn run ${s}`);
-              executed = true;
-              break;
-            }
-          }
-
-          if (!executed) {
-            console.log("No specific build script matched in root package.json, proceeding to electron-builder step...");
-          }
-          EOF
-
-      - name: 7. Package Electron Installers (Fallback if not already packaged)
+      - name: 7. Package Electron Installers
         shell: bash
         run: |
-          # electron-builder ကို workspace root သို့မဟုတ် app ဖိုင်တွဲမှနေ၍ တိုက်ရိုက်ခေါ်မည်
+          # electron-builder ဖြင့် Installer ဖိုင်များကို dist/ သို့ တိုက်ရိုက်ထုတ်မည်
           if [ -f "node_modules/.bin/electron-builder" ]; then
             ./node_modules/.bin/electron-builder ${{ matrix.build_flag }} --publish never
           else
             npx electron-builder ${{ matrix.build_flag }} --publish never
           fi
-          
-          # ထွက်လာသော dist သို့မဟုတ် out ဖိုင်များကို သေချာစစ်ဆေးမည်
-          ls -la dist/ || true
-          ls -la out/ || true
 
-      - name: 8. Upload Build Artifacts (For Actions Storage)
+      - name: 8. Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Yakit-English-${{ matrix.platform }}
           path: |
-            dist/*
-            out/*
-            release/*
-            build/*.exe
-            build/*.dmg
-            build/*.AppImage
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.gz
           if-no-files-found: ignore
 
       - name: 9. Publish to GitHub Releases (On Tag Push)
@@ -176,6 +119,4 @@ jobs:
             dist/*.zip
             dist/*.AppImage
             dist/*.deb
-            out/*.exe
-            out/*.dmg
-            release/*.exe
+            dist/*.tar.gz
