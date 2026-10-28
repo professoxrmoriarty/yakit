@@ -1,0 +1,232 @@
+name: 1. Smart Sync & Progressive Translate Yakit
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Release အသစ် အတင်းထုတ်မည်လား? (true ရွေးပါ)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  UPSTREAM_REPO: "https://github.com/yaklang/yakit.git"
+  UPSTREAM_BRANCH: "master"
+  TARGET_BRANCH: "english-edition"
+
+jobs:
+  smart-sync-and-translate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Fork Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Configure Git & Smart Patch Sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # [၁] ကိုယ်ပိုင်ဖိုင်များနှင့် Cache များကို လုံခြုံစွာ Backup ယူမည်
+          mkdir -p /tmp/backup
+          cp -r .github/workflows /tmp/backup/workflows 2>/dev/null || true
+          if [ -f "README.md" ]; then cp README.md /tmp/backup/README.md; fi
+          if [ -f ".i18n_ts_cache.json" ]; then cp .i18n_ts_cache.json /tmp/backup/.i18n_ts_cache.json; fi
+          if [ -f "security_glossary.json" ]; then cp security_glossary.json /tmp/backup/security_glossary.json; fi
+
+          # [၂] Upstream ကို Remote အဖြစ် ချိတ်ဆက်ပြီး Change Log များကို ဖမ်းယူမည်
+          git remote add upstream "${{ env.UPSTREAM_REPO }}" 2>/dev/null || git remote set-url upstream "${{ env.UPSTREAM_REPO }}"
+          git fetch upstream "${{ env.UPSTREAM_BRANCH }}"
+
+          # Target Branch သို့မဟုတ် Master သို့ Checkout ဝင်မည်
+          git checkout -B "${{ env.TARGET_BRANCH }}" origin/"${{ env.TARGET_BRANCH }}" 2>/dev/null || git checkout -b "${{ env.TARGET_BRANCH }}"
+
+          # [၃] အပြည့်အစုံ Overwrite လုပ်မည့်အစား Upstream ၏ အပြောင်းအလဲများကို Merge (သို့) Patch ဖြင့် ပေါင်းထည့်မည်
+          git merge upstream/"{{"{ env.UPSTREAM_BRANCH }"}} --no-edit --allow-unrelated-histories || echo "Merge conflict handled or skipped"
+
+          # [၄] Protected ဖိုင်များကို မူလအခြေအနေသို့ ပြန်လည်ဖော်ဆောင်မည် (Upstream က လာမထိစေရန်)
+          rm -rf .github/workflows
+          mkdir -p .github/workflows
+          cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
+          if [ -f "/tmp/backup/README.md" ]; then cp /tmp/backup/README.md README.md; fi
+          if [ -f "/tmp/backup/.i18n_ts_cache.json" ]; then cp /tmp/backup/.i18n_ts_cache.json .i18n_ts_cache.json; fi
+          if [ -f "/tmp/backup/security_glossary.json" ]; then cp /tmp/backup/security_glossary.json security_glossary.json; fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai
+
+      - name: Progressive Translation & Patch Update Script
+        id: translate
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: "https://openrouter.ai/api/v1"
+        run: |
+          python3 - << 'EOF'
+          import os, re, time, json
+          from openai import OpenAI
+
+          client = OpenAI(
+              api_key=os.environ.get("AI_API_KEY"),
+              base_url=os.environ.get("AI_BASE_URL")
+          )
+          
+          FREE_MODELS = [
+              "google/gemini-2.0-flash-lite-preview-02-05:free",
+              "mistralai/mistral-nemo:free",
+              "meta-llama/llama-3.2-3b-instruct:free"
+          ]
+
+          zh_char_re = re.compile(r'[\u4e00-\u9fff]')
+          ts_string_re = re.compile(
+              r'(?:'
+              r'(?:"([^"\\]*(?:\\.[^"\\]*)*[\u4e00-\u9fff]+[^"\\]*(?:\\.[^"\\]*)*)")|'
+              r"(?:'([^'\\]*(?:\\.[^'\\]*)*[\u4e00-\u9fff]+[^'\\]*(?:\\.[^'\\]*)*)')|"
+              r'(?:`([^`\\]*(?:\\.[^`\\]*)*[\u4e00-\u9fff]+[^`\\]*(?:\\.[^`\\]*)*)`)'
+              r')'
+          )
+
+          CACHE_FILE = ".i18n_ts_cache.json"
+          cache = {}
+          if os.path.exists(CACHE_FILE):
+              try:
+                  with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+                      cache = json.load(f)
+              except:
+                  pass
+
+          def chunk_list(lst, n):
+              for i in range(0, len(lst), n):
+                  yield lst[i:i + n]
+
+          target_exts = {".ts", ".tsx", ".js", ".jsx"}
+          ignore_dirs = {"node_modules", ".git", "dist", "build", ".github"}
+          
+          ts_files = []
+          strings_to_translate = set()
+
+          for root, dirs, files in os.walk("."):
+              dirs[:] = [d for d in dirs if d not in ignore_dirs]
+              for f in files:
+                  ext = os.path.splitext(f)[1]
+                  if ext in target_exts:
+                      filepath = os.path.join(root, f)
+                      try:
+                          with open(filepath, "r", encoding="utf-8") as file:
+                              content = file.read()
+                          if zh_char_re.search(content):
+                              ts_files.append(filepath)
+                              for match in ts_string_re.finditer(content):
+                                  text = next(m for m in match.groups() if m is not None)
+                                  if len(text) <= 300 and text not in cache:
+                                      strings_to_translate.add(text)
+                      except:
+                          continue
+
+          strings_list = list(strings_to_translate)
+          print(f"Pending new strings from upstream diff: {len(strings_list)}")
+
+          is_complete = True
+          limit_hit = False
+
+          if strings_list:
+              translated_count = 0
+              for chunk in chunk_list(strings_list, 15):
+                  if limit_hit: break
+                  system_prompt = "You are a software localization expert. Translate the following JSON array of Chinese strings into English. Retain any HTML/JSX tags and variables. Respond ONLY with a valid JSON array of strings in the exact same order."
+                  user_prompt = json.dumps(chunk, ensure_ascii=False)
+                  
+                  success = False
+                  for model_name in FREE_MODELS:
+                      if success: break
+                      for attempt in range(2):
+                          try:
+                              response = client.chat.completions.create(
+                                  model=model_name,
+                                  messages=[
+                                      {"role": "system", "content": system_prompt},
+                                      {"role": "user", "content": user_prompt}
+                                  ],
+                                  temperature=0.1
+                              )
+                              result_text = response.choices[0].message.content.strip()
+                              if result_text.startswith("```json"): result_text = result_text[7:-3].strip()
+                              elif result_text.startswith("```"): result_text = result_text[3:-3].strip()
+                              
+                              translated_chunk = json.loads(result_text)
+                              if len(translated_chunk) == len(chunk):
+                                  for orig, trans in zip(chunk, translated_chunk):
+                                      cache[orig] = trans
+                                  with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                                      json.dump(cache, f, ensure_ascii=False, indent=2)
+                                  success = True
+                                  break
+                          except:
+                              time.sleep(2)
+                  if not success:
+                      limit_hit = True
+                      break
+                  time.sleep(1)
+
+              if limit_hit or translated_count < len(strings_list):
+                  is_complete = False
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"is_complete={'true' if is_complete else 'false'}\n")
+
+          if is_complete:
+              print("Applying translations to files...")
+              for filepath in ts_files:
+                  try:
+                      with open(filepath, "r", encoding="utf-8") as file:
+                          content = file.read()
+                      def replacer(match):
+                          original = next(m for m in match.groups() if m is not None)
+                          translated = cache.get(original, original)
+                          if translated != original and not zh_char_re.search(translated):
+                              if match.group(1) is not None: return f'"{translated.replace('"', '\\"')}"'
+                              elif match.group(2) is not None: return f"'{translated.replace("'", "\\'")}'"
+                              else: return f'`{translated.replace("`", "\\`")}`'
+                          return match.group(0)
+                      new_content = ts_string_re.sub(replacer, content)
+                      if new_content != content:
+                          with open(filepath, "w", encoding="utf-8") as file:
+                              file.write(new_content)
+                  except:
+                      pass
+          EOF
+
+      - name: Commit Smart Sync & Translation Progress
+        run: |
+          git add -f .i18n_ts_cache.json security_glossary.json README.md .github/ 2>/dev/null || true
+          if [ "${{ steps.translate.outputs.is_complete }}" == "false" ]; then
+            git commit -m "chore(sync): smart sync and update translation cache [skip ci]" || true
+            git push -u origin "${{ env.TARGET_BRANCH }}" --force
+          else
+            git add -A
+            if ! git diff --cached --quiet; then
+              git commit -m "feat(sync): upstream synced & 100% localized"
+            fi
+            git push -u origin "${{ env.TARGET_BRANCH }}" --force
+          fi
+
+      - name: Trigger Build & Release
+        if: steps.translate.outputs.is_complete == 'true' || inputs.force_release == true
+        run: |
+          EN_TAG="v$(date +'%Y.%m.%d')-yakit-en"
+          git tag -f "${EN_TAG}" HEAD
+          git push origin "refs/tags/${EN_TAG}" --force
+          echo "Tag $EN_TAG pushed successfully."
