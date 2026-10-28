@@ -6,7 +6,8 @@
 **An Interactive Penetration Testing Workbench Powered by the Yaklang Security Programming Language (CDSL)**
 
 [![Build & Release (English)](https://github.com/professoxrmoriarty/yakit/actions/workflows/release-en.yml/badge.svg)](https://github.com/professoxrmoriarty/yakit/actions/workflows/release-en.yml)
-[![Sync Upstream & Translate](https://github.com/professoxrmoriarty/yakit/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/professoxrmoriarty/yakit/actions/workflows/sync-upstream.yml)
+[![Sync Upstream & Translate](https://github.com/professoxrmoriarty/yakit/actions/workflows/1-sync-translate.yml/badge.svg)](https://github.com/professoxrmoriarty/yakit/actions/workflows/1-sync-translate.yml)
+[![.github/workflows/1-sync-translate.yml](https://github.com/professoxrmoriarty/yakit/actions/workflows/1-sync-translate.yml/badge.svg?event=deployment_status)](https://github.com/professoxrmoriarty/yakit/actions/workflows/1-sync-translate.yml)
 [![Latest Release](https://img.shields.io/github/v/release/professoxrmoriarty/yakit?label=English%20Release)](https://github.com/professoxrmoriarty/yakit/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/professoxrmoriarty/yakit/total)](https://github.com/professoxrmoriarty/yakit/releases)
 [![License](https://img.shields.io/github/license/professoxrmoriarty/yakit)](LICENSE.md)
