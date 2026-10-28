@@ -52,7 +52,7 @@ jobs:
           import os, re, time, json, subprocess
           from openai import OpenAI
 
-          print("=== Step 1: Configuring Git & Smart Sync ==")
+          print("=== Step 1: Configuring Git & Smart Sync ===")
           subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
           subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
 
@@ -95,7 +95,7 @@ jobs:
           if os.path.exists("/tmp/backup/security_glossary.json"):
               subprocess.run(["cp", "/tmp/backup/security_glossary.json", "security_glossary.json"])
 
-          print("=== Step 2: Progressive Translation Scan ==")
+          print("=== Step 2: Progressive Translation Scan ===")
           client = OpenAI(
               api_key=os.environ.get("AI_API_KEY"),
               base_url=os.environ.get("AI_BASE_URL")
@@ -188,11 +188,14 @@ jobs:
                                       cache[orig] = trans
                                   with open(CACHE_FILE, "w", encoding="utf-8") as f:
                                       json.dump(cache, f, ensure_ascii=False, indent=2)
+                                  translated_count += len(chunk)
+                                  print(f"Progress: {translated_count}/{len(strings_list)} translated.")
                                   success = True
                                   break
                           except:
                               time.sleep(2)
                   if not success:
+                      print("Rate limit reached or models unavailable. Saving progress for next run...")
                       limit_hit = True
                       break
                   time.sleep(1)
@@ -213,9 +216,16 @@ jobs:
                           original = next(m for m in match.groups() if m is not None)
                           translated = cache.get(original, original)
                           if translated != original and not zh_char_re.search(translated):
-                              if match.group(1) is not None: return f'"{translated.replace('"', '\\"')}"'
-                              elif match.group(2) is not None: return f"'{translated.replace("'", "\\'")}'"
-                              else: return f'`{translated.replace("`", "\\`")}`'
+                              # Python 3.11 နှင့် ကိုက်ညီစေရန် f-string ပြင်ပတွင် Escape အရင်လုပ်ခြင်း
+                              if match.group(1) is not None:
+                                  esc = translated.replace('"', '\\"')
+                                  return f'"{esc}"'
+                              elif match.group(2) is not None:
+                                  esc = translated.replace("'", "\\'")
+                                  return f"'{esc}'"
+                              else:
+                                  esc = translated.replace('`', '\\`')
+                                  return f'`{esc}`'
                           return match.group(0)
                       new_content = ts_string_re.sub(replacer, content)
                       if new_content != content:
