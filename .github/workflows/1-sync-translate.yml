@@ -572,10 +572,11 @@ jobs:
             echo "Already up-to-date with upstream."
           fi
 
-      - name: 10. Trigger Release Workflow (Optional)
-        if: github.event.inputs.create_release_tag == 'true' || startsWith(github.ref, 'refs/tags/v')
-        uses: ./.github/workflows/release-en.yml
+      - name: 10. Trigger Multi-Product Build & Release
+        if: steps.translate.outputs.is_complete == 'true' || inputs.force_release == true
+        uses: benc-uk/workflow-dispatch@v1
         with:
-          tag_name: "v$(date +'%Y.%m.%d')-en"
-          target_ref: ${{ env.TARGET_BRANCH }}
-        secrets: inherit
+          workflow: release-en.yml
+          ref: ${{ env.TARGET_BRANCH }}
+          inputs:'{"tag_name":"v$(date +'%Y.%m.%d')-en", "target_ref": "${{ env.TARGET_BRANCH }}"}'
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
