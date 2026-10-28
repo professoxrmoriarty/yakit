@@ -76,7 +76,10 @@ jobs:
         run: |
           yarn config set network-timeout 300000
           yarn install --ignore-engines
-
+          
+          # Workspace တစ်ခုလုံးကို Build လုပ်ခြင်း (သို့မဟုတ် app build)
+          yarn run build || yarn workspaces run build || true
+          
           echo "=== Available scripts in package.json ==="
           node -e "console.log(Object.keys(require('./package.json').scripts || {}))"
 
@@ -131,13 +134,16 @@ jobs:
       - name: 7. Package Electron Installers (Fallback if not already packaged)
         shell: bash
         run: |
-          # အကယ်၍ Step 6 တွင် installer မထွက်သေးပါက electron-builder ဖြင့် တိုက်ရိုက်ထုတ်မည်
-          if ! ls dist/*.exe dist/*.dmg dist/*.AppImage dist/*.deb dist/*.zip 1> /dev/null 2>&1; then
-            echo "Running npx electron-builder ${{ matrix.build_flag }}..."
-            npx electron-builder ${{ matrix.build_flag }} --publish never || true
+          # electron-builder ကို workspace root သို့မဟုတ် app ဖိုင်တွဲမှနေ၍ တိုက်ရိုက်ခေါ်မည်
+          if [ -f "node_modules/.bin/electron-builder" ]; then
+            ./node_modules/.bin/electron-builder ${{ matrix.build_flag }} --publish never
           else
-            echo "Installers already generated in dist/ folder!"
+            npx electron-builder ${{ matrix.build_flag }} --publish never
           fi
+          
+          # ထွက်လာသော dist သို့မဟုတ် out ဖိုင်များကို သေချာစစ်ဆေးမည်
+          ls -la dist/ || true
+          ls -la out/ || true
 
       - name: 8. Upload Build Artifacts (For Actions Storage)
         uses: actions/upload-artifact@v4
