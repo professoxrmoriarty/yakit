@@ -34,3 +34,4 @@
 README.md merge=ours
 README_LEGACY.md merge=ours
 .github/workflows/security_glossary.json merge=ours
+.gitattributes merge=ours
