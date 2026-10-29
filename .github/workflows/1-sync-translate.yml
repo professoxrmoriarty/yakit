@@ -2,11 +2,12 @@ name: 1. Smart Sync & Progressive Translate (Resume & Cache Edition)
 
 on:
   schedule:
+    # ၆ နာရီခြား တစ်ကြိမ် အလိုအလျောက် Run ပြီး ရပ်ထားသည့်နေရာမှ ဆက်ဘာသာပြန်ပေးမည်
     - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       force_release:
-        description: '၁၀၀% မပြီးသေး也没 Release အတင်းထုတ်မည်လား? (true/false)'
+        description: '၁၀၀% မပြီးသေးလည်း Release အတင်းထုတ်မည်လား? (true/false)'
         required: false
         default: 'false'
 
@@ -18,6 +19,7 @@ env:
   UPSTREAM_REPO: "https://github.com/yaklang/yakit.git"
   UPSTREAM_BRANCH: "master"
   TARGET_BRANCH: "english-edition"
+  YAKLANG_FORK_REPO: "https://github.com/professoxrmoriarty/yaklang.git"
 
 jobs:
   sync-and-translate:
@@ -63,6 +65,7 @@ jobs:
             UP_REF="upstream/main"
           fi
 
+          # Repo တစ်ခုလုံးကို အစကပြန်မဆွဲဘဲ Upstream မှ ပြောင်းလဲသွားသော Diff များကိုသာ Merge လုပ်မည်
           if ! git merge "$UP_REF" -X theirs --allow-unrelated-histories --no-edit; then
             git status --porcelain | awk '$1=="DU" || $1=="UD" {print $2}' | xargs -r git rm -f
             git checkout --theirs . || true
@@ -70,6 +73,7 @@ jobs:
             git commit --no-edit || true
           fi
 
+          # ကိုယ်ပိုင် workflows, README, glossary နှင့် cache ဖိုင်များကို ပြန်ထည့်မည်
           rm -rf .github/workflows/*
           mkdir -p .github/workflows
           cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
@@ -85,6 +89,13 @@ jobs:
           if [ -f "/tmp/backup/README_EN.md" ]; then
             cp /tmp/backup/README_EN.md README_EN.md
           fi
+
+          # professoxrmoriarty/yaklang ရှိ shared cache နှင့် glossary ကိုပါ လှမ်းချိတ်ပြီး ပေါင်းစပ်ယူမည်
+          git clone --depth 1 "${{ env.YAKLANG_FORK_REPO }}" /tmp/yaklang_fork 2>/dev/null || true
+          if [ -f "/tmp/yaklang_fork/.i18n_cache.json" ]; then
+            cp /tmp/yaklang_fork/.i18n_cache.json /tmp/yaklang_cache.json
+          fi
+          rm -rf /tmp/yaklang_fork
 
           if [ -n "$(git status --porcelain)" ]; then
             git add .github/ .i18n_cache.json README.md 2>/dev/null || true
@@ -136,9 +147,11 @@ jobs:
           EN_DIR = "app/renderer/src/main/public/locales/en"
           SRC_DIRS = ["app/renderer/src", "app/main", "pocs", "plugins", "app/plugin"]
           CACHE_FILE = ".i18n_cache.json"
+          YAKLANG_SHARED_CACHE = "/tmp/yaklang_cache.json"
           GLOSSARY_FILE = ".github/security_glossary.json"
           META_KEY = "__glossary_snapshot__"
 
+          # တစ်ကြိမ် Run လျှင် အများဆုံး ၄၅ မိနစ် သို့မဟုတ် Rate Limit ၅ ကြိမ်ဆက်တိုက်ထိပါက ရပ်ပြီး Cache သိမ်းမည်
           START_TIME = time.time()
           MAX_RUNTIME_SECONDS = 45 * 60
           MAX_CONSECUTIVE_FAILURES = 5
@@ -169,13 +182,25 @@ jobs:
 
           sorted_inline_keys = sorted(inline_glossary.keys(), key=len, reverse=True)
 
+          # Load Existing Cache & Merge Shared Cache from professoxrmoriarty/yaklang
           cache = {}
+          if os.path.exists(YAKLANG_SHARED_CACHE):
+              try:
+                  with open(YAKLANG_SHARED_CACHE, 'r', encoding='utf-8') as f:
+                      shared_c = json.load(f)
+                      if isinstance(shared_c, dict):
+                          cache.update(shared_c)
+              except Exception:
+                  pass
+
           if os.path.exists(CACHE_FILE):
               try:
                   with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-                      cache = json.load(f)
+                      local_c = json.load(f)
+                      if isinstance(local_c, dict):
+                          cache.update(local_c)
               except Exception:
-                  cache = {}
+                  pass
 
           prev_snapshot = cache.get(META_KEY, {}) if isinstance(cache.get(META_KEY), dict) else {}
           current_snapshot = {**inline_glossary, **exact_glossary}
@@ -223,7 +248,7 @@ jobs:
 
               unique_new = [
                   t for t in texts
-                  if t not in cache and has_zh(t) and t.strip() not in IGNORE_STRINGS
+                  if (t not in cache or has_zh(cache.get(t, ""))) and has_zh(t) and t.strip() not in IGNORE_STRINGS
               ]
               if not unique_new:
                   print(f"[{stage_name}] All strings already in cache! Nothing new to translate.")
@@ -251,7 +276,7 @@ jobs:
                       limit_reached = True
                       break
                   if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                      print("Rate limit reached! Pausing and saving cache checkpoint...")
+                      print("Rate limit reached! Pausing and saving cache checkpoint for next run...")
                       limit_reached = True
                       break
 
@@ -269,7 +294,8 @@ jobs:
                                   results = trans_joined.split("\n")
                                   if len(results) == len(single_line):
                                       for (orig, _), res in zip(single_line, results):
-                                          cache[orig] = post_process_glossary(res)
+                                          if res and not has_zh(res):
+                                              cache[orig] = post_process_glossary(res)
                                       batch_ok = True
                                       consecutive_failures = 0
                                       break
@@ -307,7 +333,6 @@ jobs:
                   print(f"[{stage_name}] Progress: {done_count}/{len(mt_queue)} saved to cache.")
                   time.sleep(0.5)
 
-          # Initialize collections safely
           json_zh_strings = set()
           source_zh_strings = set()
           yaml_zh_strings = set()
@@ -534,16 +559,26 @@ jobs:
         env:
           UPSTREAM_BRANCH: ${{ env.UPSTREAM_BRANCH }}
         run: |
-          export NODE_PATH="$(npm root -g)"
+          GLOBAL_NM="$(npm root -g)"
+          export GLOBAL_NM
           node - << 'EOF'
           const fs = require('fs');
           const path = require('path');
           const { execFileSync } = require('child_process');
-          let ts;
+
+          let ts = null;
           try {
-            ts = require('typescript');
-          } catch (e) {
-            ts = null;
+            const globalTsPath = path.join(process.env.GLOBAL_NM || '', 'typescript');
+            ts = require(globalTsPath);
+          } catch {
+            try {
+              ts = require('typescript');
+            } catch {
+              ts = null;
+            }
+          }
+          if (ts && !ts.createProgram && ts.default && ts.default.createProgram) {
+            ts = ts.default;
           }
 
           const upstreamRef = `upstream/${process.env.UPSTREAM_BRANCH || 'master'}`;
@@ -588,50 +623,35 @@ jobs:
           }
 
           function checkTsSyntax(filesToCheck) {
-            if (!ts || filesToCheck.length === 0) return new Map();
-            
-            const createProg = ts.createProgram || (ts.default && ts.default.createProgram);
-            if (typeof createProg !== 'function') {
-              console.log("Warning: ts.createProgram is not available, skipping strict TS syntax check.");
-              return new Map();
-            }
-
-            const targetVersion = (ts.ScriptTarget && ts.ScriptTarget.Latest) ? ts.ScriptTarget.Latest : 99;
-
-            const compilerOptions = {
-              target: targetVersion,
-              module: (ts.ModuleKind && ts.ModuleKind.ESNext) ? ts.ModuleKind.ESNext : 99,
-              jsx: (ts.JsxEmit && ts.JsxEmit.Preserve) ? ts.JsxEmit.Preserve : 1,
-              experimentalDecorators: true,
-              allowJs: true,
-              noEmit: true,
-              noResolve: true,
-              skipLibCheck: true,
-              types: []
-            };
-
-            const absMap = new Map();
-            const absList = [];
-            for (const rel of filesToCheck) {
-              if (fs.existsSync(rel)) {
-                const abs = path.resolve(rel);
-                absMap.set(abs, rel);
-                absList.push(abs);
-              }
-            }
-
-            const program = createProg(absList, compilerOptions);
             const brokenMap = new Map();
+            if (!ts || typeof ts.createSourceFile !== 'function' || filesToCheck.length === 0) {
+              return brokenMap;
+            }
 
-            for (const [abs, rel] of absMap.entries()) {
-              const sourceFile = program.getSourceFile(abs);
-              if (!sourceFile) continue;
-              const diagnostics = program.getSyntacticDiagnostics(sourceFile);
-              if (diagnostics.length > 0) {
-                const d = diagnostics[0];
-                const { line, character } = sourceFile.getLineAndCharacterOfPosition(d.start || 0);
-                const msg = ts.flattenDiagnosticMessageText ? ts.flattenDiagnosticMessageText(d.messageText, ' ') : String(d.messageText);
-                brokenMap.set(rel, { code: `TS${d.code}`, reason: `Line ${line + 1}:${character + 1} - ${msg}` });
+            // Per-file AST parser check (createSourceFile) သည် createProgram ထက် အဆပေါင်းများစွာ ပိုမြန်ပြီး crash လုံးဝမဖြစ်ပါ
+            for (const rel of filesToCheck) {
+              if (!fs.existsSync(rel)) continue;
+              try {
+                const code = fs.readFileSync(rel, 'utf8');
+                const scriptKind = rel.endsWith('.tsx')
+                  ? (ts.ScriptKind ? ts.ScriptKind.TSX : 4)
+                  : (ts.ScriptKind ? ts.ScriptKind.TS : 3);
+                const sf = ts.createSourceFile(
+                  rel,
+                  code,
+                  (ts.ScriptTarget && ts.ScriptTarget.Latest) ? ts.ScriptTarget.Latest : 99,
+                  true,
+                  scriptKind
+                );
+                const diags = sf.parseDiagnostics || [];
+                if (diags.length > 0) {
+                  const d = diags[0];
+                  const pos = sf.getLineAndCharacterOfPosition ? sf.getLineAndCharacterOfPosition(d.start || 0) : { line: 0, character: 0 };
+                  const msg = ts.flattenDiagnosticMessageText ? ts.flattenDiagnosticMessageText(d.messageText, ' ') : String(d.messageText);
+                  brokenMap.set(rel, { code: `TS${d.code}`, reason: `Line ${pos.line + 1}:${pos.character + 1} - ${msg}` });
+                }
+              } catch (err) {
+                brokenMap.set(rel, { code: 'TS_PARSE_ERR', reason: err.message });
               }
             }
             return brokenMap;
@@ -649,7 +669,7 @@ jobs:
             revertedRecords.push({ file: rel, code: info.code, reason: info.reason, action });
           }
 
-          console.log(`Safety check completed. Reverted files due to syntax error: ${revertedRecords.length}`);
+          console.log(`Safety check completed. Reverted files: ${revertedRecords.length}`);
           EOF
 
       - name: 10. Commit and Save Progress to Repository
@@ -670,6 +690,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          # ၁၀၀% မပြီးသေးပါက Release လုံးဝ မထုတ်သေးဘဲ နောက်တစ်ကြိမ် Schedule တွင် ဆက်ပြန်မည်
           if [ "${{ steps.translate.outputs.is_complete }}" != "true" ] && [ "${{ inputs.force_release }}" != "true" ]; then
             echo "Translation still in progress (${{ steps.translate.outputs.remaining_count }} strings left). Skipping release until 100% done."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
