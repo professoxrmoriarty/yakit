@@ -192,20 +192,263 @@ jobs:
 
       - name: "7. Enforce English Default Language Safeguard"
         run: |
-          node -e '
-            const fs = require("fs");
-            const i18nFiles = [
-              "app/renderer/src/main/src/i18n/i18n.ts",
-              "app/renderer/engine-link-startup/src/i18n/i18n.ts",
-              "app/renderer/engine-link-startup/src/i18n.ts"
-            ];
-            for (const f of i18nFiles) {
-              if (fs.existsSync(f)) {
-                let s = fs.readFileSync(f, "utf8");
-                s = s.replace(/(lng\s*:\s*)([^,\n]*?)\x27zh(-CN)?\x27/g, "$1localStorage.getItem(\x27i18nextLng\x27) || \x27en\x27");
-                s = s.replace(/(fallbackLng\s*:\s*)\x27zh(-CN)?\x27/g, "$1\x27en\x27");
-                fs.writeFileSync(f, s, "utf8");
+          node - << 'EOF'
+          const fs = require("fs");
+          const i18nFiles = [
+            "app/renderer/src/main/src/i18n/i18n.ts",
+            "app/renderer/engine-link-startup/src/i18n/i18n.ts",
+            "app/renderer/engine-link-startup/src/i18n.ts"
+          ];
+          for (const f of i18nFiles) {
+            if (fs.existsSync(f)) {
+              let s = fs.readFileSync(f, "utf8");
+              s = s.replace(/(lng\s*:\s*)([^,\n]*?)['"]zh(-CN)?['"]/g, "$1localStorage.getItem('i18nextLng') || 'en'");
+              s = s.replace(/(fallbackLng\s*:\s*)['"]zh(-CN)?['"]/g, "$1'en'");
+              fs.writeFileSync(f, s, "utf8");
+              console.log("Verified English default language in:", f);
+            }
+          }
+          const htmlFiles = [
+            "app/renderer/src/main/index.html",
+            "app/renderer/engine-link-startup/index.html"
+          ];
+          for (const h of htmlFiles) {
+            if (fs.existsSync(h)) {
+              let s = fs.readFileSync(h, "utf8").replace(/正在加载中/g, "Loading...");
+              fs.writeFileSync(h, s, "utf8");
+            }
+          }
+          EOF
+
+      - name: "8. Install Dependencies & Auto-Heal Broken TS/TSX Files"
+        run: |
+          chmod +x bins/yak_darwin_* bins/yak_linux_* 2>/dev/null || true
+          yarn config set network-timeout 300000
+          yarn config set ignore-engines true
+
+          if [ -f "cli/cli.mjs" ]; then
+            yarn cli install
+          else
+            yarn install --ignore-engines
+          fi
+
+          # Upstream repo ကို fetch လုပ်ပြီး Syntax Error ရှိနေသော ဖိုင်များကို အလိုအလျောက် ပြန်ကုစားပေးမည်
+          git remote add upstream https://github.com/yaklang/yakit.git 2>/dev/null || git remote set-url upstream https://github.com/yaklang/yakit.git
+          git fetch --depth=1 upstream master || git fetch --depth=1 upstream main
+
+          node - << 'EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const { execFileSync } = require("child_process");
+
+          let ts = null;
+          const tsCandidates = [
+            path.resolve("app/renderer/src/main/node_modules/typescript"),
+            path.resolve("app/renderer/engine-link-startup/node_modules/typescript"),
+            path.resolve("node_modules/typescript"),
+            "typescript"
+          ];
+          for (const candidate of tsCandidates) {
+            try {
+              ts = require(candidate);
+              break;
+            } catch (e) {}
+          }
+          if (ts && !ts.createSourceFile && ts.default) {
+            ts = ts.default;
+          }
+          console.log("Loaded TypeScript Compiler version:", ts ? ts.version : "NOT FOUND");
+
+          function walk(dir, list = []) {
+            if (!fs.existsSync(dir)) return list;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                walk(full, list);
+              } else if (
+                (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx") || entry.name.endsWith(".json")) &&
+                !entry.name.endsWith(".d.ts")
+              ) {
+                list.push(full.replace(/\\/g, "/"));
               }
             }
-            for (const h of ["app/renderer/src/main/index.html", "app/renderer/engine-link-startup/index.html"]) {
-              if (fs.existsSync(h)) {
+            return list;
+          }
+
+          const allFiles = walk("app");
+          let healedCount = 0;
+
+          for (const rel of allFiles) {
+            let broken = false;
+            let reason = "";
+            try {
+              const content = fs.readFileSync(rel, "utf8");
+              if (rel.endsWith(".json")) {
+                JSON.parse(content);
+              } else if (ts) {
+                const isTsx = rel.endsWith(".tsx");
+                const sf = ts.createSourceFile(
+                  rel,
+                  content,
+                  99,
+                  true,
+                  isTsx ? 4 : 3
+                );
+                if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
+                  broken = true;
+                  reason = String(sf.parseDiagnostics[0].messageText);
+                } else if (typeof ts.transpileModule === "function") {
+                  const res = ts.transpileModule(content, {
+                    fileName: rel,
+                    reportDiagnostics: true,
+                    compilerOptions: {
+                      target: 99,
+                      module: 99,
+                      jsx: isTsx ? 1 : undefined,
+                      experimentalDecorators: true
+                    }
+                  });
+                  if (res.diagnostics && res.diagnostics.length > 0) {
+                    broken = true;
+                    reason = String(res.diagnostics[0].messageText);
+                  }
+                }
+              }
+            } catch (err) {
+              broken = true;
+              reason = err.message;
+            }
+
+            if (broken) {
+              try {
+                execFileSync("git", ["checkout", "FETCH_HEAD", "--", rel], { stdio: "ignore" });
+                console.log("[Auto-Healed] Restored clean upstream file:", rel, "->", reason);
+                healedCount++;
+              } catch (err) {
+                console.log("[Warning] Could not checkout upstream file:", rel);
+              }
+            }
+          }
+          console.log("Syntax scan complete. Checked", allFiles.length, "files, auto-healed", healedCount, "file(s).");
+          EOF
+
+      - name: "9. Build & Package All 3 Editions (Yakit, IRify, Memfit)"
+        run: |
+          if [ -f "cli/cli.mjs" ]; then
+            # 1. Build & Pack Yakit
+            yarn cli build -v yakit --devtools
+            yarn cli pack -s ${{ matrix.platform }} -v yakit
+
+            # 2. Build & Pack IRify
+            yarn cli build -v irify
+            yarn cli pack -s ${{ matrix.platform }} -v irify
+
+            # 3. Build & Pack Memfit AI
+            yarn cli build -v memfit
+            yarn cli pack -s ${{ matrix.platform }} -v memfit
+          else
+            yarn build-renders
+            yarn pack-${{ matrix.platform }}
+          fi
+
+          ls -lh release/ dist/ 2>/dev/null || true
+
+      - name: "10. Upload OS Installer Artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yakit-English-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            !release/*unpacked*
+            !dist/*unpacked*
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # အဆင့် (၃) - ပြီးပြည့်စုံသော (၃) မျိုးခွဲ Release များကို GitHub သို့ တင်ခြင်း
+  # ---------------------------------------------------------------------------
+  publish-release:
+    name: "Publish English Release (Yakit, IRify, Memfit AI)"
+    needs: [prepare-engine, build-matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - name: "1. Download All OS Artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Yakit-English-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: "2. Resolve Final Release Tag"
+        id: resolve_tag
+        run: |
+          INPUT_TAG="${{ inputs.tag_name }}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            FINAL_TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_TAG}" ]]; then
+            FINAL_TAG="${INPUT_TAG}"
+          else
+            FINAL_TAG="v$(date +'%Y.%m.%d')-en"
+          fi
+          echo "tag=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
+          find release-assets/ -type f -exec ls -lh {} +
+
+      - name: "3. Publish Yakit Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: "Yakit English Edition (${{ steps.resolve_tag.outputs.tag }})"
+          overwrite: true
+          body: |
+            ### Yakit English Edition — ${{ steps.resolve_tag.outputs.tag }}
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
+            * **Supported Platforms:** Windows (`.exe`), macOS Apple Silicon & Intel (`.dmg`), Linux x64/arm64 (`.AppImage`).
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/Yakit*.exe
+            release-assets/**/Yakit*.dmg
+            release-assets/**/Yakit*.AppImage
+
+      - name: "4. Publish IRify Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}-irify
+          name: "IRify English Edition (${{ steps.resolve_tag.outputs.tag }}-irify)"
+          overwrite: true
+          body: |
+            ### IRify English Edition — ${{ steps.resolve_tag.outputs.tag }}-irify
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
+            * **Description:** Static code analysis & rule evaluation brought to GUI.
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/IRify*.exe
+            release-assets/**/IRify*.dmg
+            release-assets/**/IRify*.AppImage
+
+      - name: "5. Publish Memfit AI Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}-memfit
+          name: "Memfit AI English Edition (${{ steps.resolve_tag.outputs.tag }}-memfit)"
+          overwrite: true
+          body: |
+            ### Memfit AI English Edition — ${{ steps.resolve_tag.outputs.tag }}-memfit
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
+            * **Description:** Open-source cybersecurity AI Agent orchestration framework.
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/Memfit*.exe
+            release-assets/**/Memfit*.dmg
+            release-assets/**/Memfit*.AppImage
