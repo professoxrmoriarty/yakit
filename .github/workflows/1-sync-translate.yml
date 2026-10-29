@@ -1,8 +1,7 @@
-name: 1. Smart Sync & Progressive Translate (Resume & Cache Edition)
+name: "1. Smart Sync & Progressive Translate (Resume & Cache Edition)"
 
 on:
   schedule:
-    # ၆ နာရီခြား တစ်ကြိမ် အလိုအလျောက် Run ပြီး ရပ်ထားသည့်နေရာမှ ဆက်ဘာသာပြန်ပေးမည်
     - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
@@ -23,27 +22,24 @@ env:
 
 jobs:
   sync-and-translate:
-    name: Smart Diff Sync & Progressive Translate
+    name: "Smart Diff Sync & Progressive Translate"
     runs-on: ubuntu-latest
-    outputs:
-      should_release: ${{ steps.check_release.outputs.should_release }}
-      release_tag: ${{ steps.check_release.outputs.release_tag }}
     steps:
-      - name: 1. Checkout Fork Repository
+      - name: "1. Checkout Fork Repository"
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
           token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: 2. Configure Git & Fetch Upstream Diffs
+      - name: "2. Configure Git & Fetch Upstream Diffs"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream ${{ env.UPSTREAM_REPO }} 2>/dev/null || git remote set-url upstream ${{ env.UPSTREAM_REPO }}
           git fetch upstream ${{ env.UPSTREAM_BRANCH }} --tags || git fetch upstream main --tags
 
-      - name: 3. Merge Upstream Diff Changes Only (Preserve Custom Assets & Cache)
+      - name: "3. Merge Upstream Diff Changes Only (Preserve Custom Assets & Cache)"
         run: |
           mkdir -p /tmp/backup/workflows
           cp -r .github/workflows/* /tmp/backup/workflows/ 2>/dev/null || true
@@ -65,7 +61,6 @@ jobs:
             UP_REF="upstream/main"
           fi
 
-          # Repo တစ်ခုလုံးကို အစကပြန်မဆွဲဘဲ Upstream မှ ပြောင်းလဲသွားသော Diff များကိုသာ Merge လုပ်မည်
           if ! git merge "$UP_REF" -X theirs --allow-unrelated-histories --no-edit; then
             git status --porcelain | awk '$1=="DU" || $1=="UD" {print $2}' | xargs -r git rm -f
             git checkout --theirs . || true
@@ -73,7 +68,6 @@ jobs:
             git commit --no-edit || true
           fi
 
-          # ကိုယ်ပိုင် workflows, README, glossary နှင့် cache ဖိုင်များကို ပြန်ထည့်မည်
           rm -rf .github/workflows/*
           mkdir -p .github/workflows
           cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
@@ -90,7 +84,6 @@ jobs:
             cp /tmp/backup/README_EN.md README_EN.md
           fi
 
-          # professoxrmoriarty/yaklang ရှိ shared cache နှင့် glossary ကိုပါ လှမ်းချိတ်ပြီး ပေါင်းစပ်ယူမည်
           git clone --depth 1 "${{ env.YAKLANG_FORK_REPO }}" /tmp/yaklang_fork 2>/dev/null || true
           if [ -f "/tmp/yaklang_fork/.i18n_cache.json" ]; then
             cp /tmp/yaklang_fork/.i18n_cache.json /tmp/yaklang_cache.json
@@ -102,7 +95,7 @@ jobs:
             git commit -m "chore(sync): merge upstream diff changes" || true
           fi
 
-      - name: 4. Enforce English Default Language in i18n.ts
+      - name: "4. Enforce English Default Language in i18n.ts"
         run: |
           for I18N_FILE in \
             "app/renderer/src/main/src/i18n/i18n.ts" \
@@ -114,22 +107,22 @@ jobs:
             fi
           done
 
-      - name: 5. Setup Node.js & TypeScript Compiler
+      - name: "5. Setup Node.js & TypeScript Compiler"
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: 6. Setup Python & Install Dependencies
+      - name: "6. Setup Python & Install Dependencies"
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 7. Install tsc, PyYAML & Translation Libraries
+      - name: "7. Install tsc, PyYAML & Translation Libraries"
         run: |
           npm install -g typescript
           python3 -m pip install --upgrade pip deep-translator PyYAML openai
 
-      - name: 8. Progressive Translation (Stop on Limit, Save Cache & Resume)
+      - name: "8. Progressive Translation (Stop on Limit, Save Cache & Resume)"
         id: translate
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
@@ -151,7 +144,6 @@ jobs:
           GLOSSARY_FILE = ".github/security_glossary.json"
           META_KEY = "__glossary_snapshot__"
 
-          # တစ်ကြိမ် Run လျှင် အများဆုံး ၄၅ မိနစ် သို့မဟုတ် Rate Limit ၅ ကြိမ်ဆက်တိုက်ထိပါက ရပ်ပြီး Cache သိမ်းမည်
           START_TIME = time.time()
           MAX_RUNTIME_SECONDS = 45 * 60
           MAX_CONSECUTIVE_FAILURES = 5
@@ -182,7 +174,6 @@ jobs:
 
           sorted_inline_keys = sorted(inline_glossary.keys(), key=len, reverse=True)
 
-          # Load Existing Cache & Merge Shared Cache from professoxrmoriarty/yaklang
           cache = {}
           if os.path.exists(YAKLANG_SHARED_CACHE):
               try:
@@ -555,7 +546,7 @@ jobs:
               f.write(f"remaining_count={len(remaining)}\n")
           EOF
 
-      - name: 9. Safety Check (tsc Syntax & JSON Validation + Auto-Revert)
+      - name: "9. Safety Check (tsc Syntax & JSON Validation + Auto-Revert)"
         env:
           UPSTREAM_BRANCH: ${{ env.UPSTREAM_BRANCH }}
         run: |
@@ -577,7 +568,7 @@ jobs:
               ts = null;
             }
           }
-          if (ts && !ts.createProgram && ts.default && ts.default.createProgram) {
+          if (ts && !ts.createSourceFile && ts.default && ts.default.createSourceFile) {
             ts = ts.default;
           }
 
@@ -628,7 +619,6 @@ jobs:
               return brokenMap;
             }
 
-            // Per-file AST parser check (createSourceFile) သည် createProgram ထက် အဆပေါင်းများစွာ ပိုမြန်ပြီး crash လုံးဝမဖြစ်ပါ
             for (const rel of filesToCheck) {
               if (!fs.existsSync(rel)) continue;
               try {
@@ -672,7 +662,7 @@ jobs:
           console.log(`Safety check completed. Reverted files: ${revertedRecords.length}`);
           EOF
 
-      - name: 10. Commit and Save Progress to Repository
+      - name: "10. Commit and Save Progress to Repository"
         run: |
           git add -f .i18n_cache.json .github/ 2>/dev/null || true
           git add -A
@@ -685,16 +675,12 @@ jobs:
             git push origin ${{ env.TARGET_BRANCH }} --force
           fi
 
-      - name: 11. Check Completion & Prepare Release Tag
-        id: check_release
+      - name: "11. Check Completion & Trigger Multi-Product Release"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # ၁၀၀% မပြီးသေးပါက Release လုံးဝ မထုတ်သေးဘဲ နောက်တစ်ကြိမ် Schedule တွင် ဆက်ပြန်မည်
           if [ "${{ steps.translate.outputs.is_complete }}" != "true" ] && [ "${{ inputs.force_release }}" != "true" ]; then
             echo "Translation still in progress (${{ steps.translate.outputs.remaining_count }} strings left). Skipping release until 100% done."
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "release_tag=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -715,19 +701,9 @@ jobs:
           if [ "${RELEASE_EXISTS}" == "false" ] || [ "${{ inputs.force_release }}" == "true" ]; then
             git tag -f "${EN_TAG}" HEAD
             git push origin "refs/tags/${EN_TAG}" --force
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "release_tag=${EN_TAG}" >> "$GITHUB_OUTPUT"
+            echo "Triggering release-en.yml for tag ${EN_TAG}..."
+            gh workflow run release-en.yml --ref "${{ env.TARGET_BRANCH }}" -f tag_name="${EN_TAG}" -f target_ref="${{ env.TARGET_BRANCH }}" || \
+            gh workflow run release-en.yml -f tag_name="${EN_TAG}" -f target_ref="${{ env.TARGET_BRANCH }}"
           else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "release_tag=${EN_TAG}" >> "$GITHUB_OUTPUT"
+            echo "Release ${EN_TAG} already exists."
           fi
-
-  trigger-english-build:
-    name: Auto-Trigger Multi-OS English Release (Yakit, IRify, Memfit)
-    needs: sync-and-translate
-    if: needs.sync-and-translate.outputs.should_release == 'true'
-    uses: ./.github/workflows/release-en.yml
-    with:
-      tag_name: ${{ needs.sync-and-translate.outputs.release_tag }}
-      target_ref: 'english-edition'
-    secrets: inherit
