@@ -76,24 +76,23 @@ jobs:
               -o "bins/scripts/google-chrome-plugin.zip" || true
           fi
 
-          # 2. Linux Engines (.zip format required by official packaging scripts)
+          # 2. Linux Engines (Keep both raw binary for CLI and .zip for packaging)
           for ARCH in amd64 arm64; do
             BIN="yak_linux_${ARCH}"
             download_engine_bin "${BIN}" "bins/${BIN}"
             chmod +x "bins/${BIN}"
-            zip -j "bins/${BIN}.zip" "bins/${BIN}"
-            rm -f "bins/${BIN}"
+            zip "bins/${BIN}.zip" "bins/${BIN}"
           done
 
           # 3. Windows Normal Engine
           download_engine_bin "yak_windows_amd64.exe" "bins/yak_windows_amd64.exe"
-          zip -j bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
+          zip bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
           rm -f bins/yak_windows_amd64.exe
 
           # 4. Windows Legacy Engine
           if download_engine_bin "yak_windows_legacy_amd64.exe" "bins/yak_windows_amd64.exe" || \
              curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe"; then
-            zip -j bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
+            zip bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
             rm -f bins/yak_windows_amd64.exe
           fi
 
@@ -139,7 +138,7 @@ jobs:
             platform: mac
 
     env:
-      CI: ""
+      CI: "true"
       NODE_OPTIONS: "--max-old-space-size=8192"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       ENGINE_VERSION: ${{ needs.prepare-engine.outputs.yak_version }}
@@ -174,7 +173,7 @@ jobs:
       - name: "3. Setup Node.js 22 & Yarn"
         uses: actions/setup-node@v4
         with:
-          node-version: '22.22.1'
+          node-version: '22'
 
       - name: "4. Ensure Yarn is Installed"
         run: yarn --version || npm install -g yarn
@@ -191,20 +190,7 @@ jobs:
           name: yak-engine-bins
           path: bins/
 
-      - name: "7. Prepare Binaries for Both Official Scripts & CLI"
-        run: |
-          chmod +x bins/yak_darwin_* 2>/dev/null || true
-          if [ -f "bins/yak_linux_amd64.zip" ] && [ ! -f "bins/yak_linux_amd64" ]; then
-            unzip -o bins/yak_linux_amd64.zip -d bins/ || true
-            chmod +x bins/yak_linux_amd64 || true
-          fi
-          if [ -f "bins/yak_linux_arm64.zip" ] && [ ! -f "bins/yak_linux_arm64" ]; then
-            unzip -o bins/yak_linux_arm64.zip -d bins/ || true
-            chmod +x bins/yak_linux_arm64 || true
-          fi
-          ls -lh bins/
-
-      - name: "8. Enforce English Default Language Safeguard"
+      - name: "7. Enforce English Default Language Safeguard"
         run: |
           node -e '
             const fs = require("fs");
@@ -229,38 +215,39 @@ jobs:
             }
           '
 
-      - name: "9. Install Dependencies"
+      - name: "8. Install, Build & Package All 3 Editions (Yakit, IRify, Memfit)"
         run: |
+          chmod +x bins/yak_darwin_* bins/yak_linux_* 2>/dev/null || true
+          ls -lh bins/
+
+          # Sub-packages အားလုံး (root + engine-link-startup + src/main) တွင် engine error မတက်စေရန်
           yarn config set network-timeout 300000
-          yarn install --ignore-engines
+          yarn config set ignore-engines true
 
-      - name: "10. Build & Package All 3 Editions (Yakit, IRify, Memfit AI)"
-        run: |
-          mkdir -p release dist
+          if [ -f "cli/cli.mjs" ]; then
+            # Root, Link Renderer နှင့် Main Renderer သုံးခုလုံး၏ dependencies များကို သွင်းပေးသည်
+            yarn cli install
 
-          for PROD in yakit irify memfit; do
-            echo "======================================"
-            echo "Building Product: ${PROD} (${{ matrix.platform }})"
-            echo "======================================"
+            # 1. Build & Pack Yakit
+            yarn cli build -v yakit --devtools
+            yarn cli pack -s ${{ matrix.platform }} -v yakit
 
-            if [ -f "./packageScript/script/buildPreScript.sh" ]; then
-              chmod +x ./packageScript/script/buildPreScript.sh
-              ./packageScript/script/buildPreScript.sh "${PROD}" || true
-            fi
+            # 2. Build & Pack IRify
+            yarn cli build -v irify
+            yarn cli pack -s ${{ matrix.platform }} -v irify
 
-            if [ -f "cli/cli.mjs" ]; then
-              if [ "${PROD}" = "yakit" ]; then
-                yarn cli build -v yakit --devtools
-              else
-                yarn cli build -v "${PROD}"
-              fi
-              yarn cli pack -s ${{ matrix.platform }} -v "${PROD}"
-            fi
-          done
+            # 3. Build & Pack Memfit AI
+            yarn cli build -v memfit
+            yarn cli pack -s ${{ matrix.platform }} -v memfit
+          else
+            yarn install --ignore-engines
+            yarn build-renders
+            yarn pack-${{ matrix.platform }}
+          fi
 
-          ls -lh release/ dist/ || true
+          ls -lh release/ dist/ 2>/dev/null || true
 
-      - name: "11. Upload OS Installer Artifacts"
+      - name: "9. Upload OS Installer Artifacts"
         uses: actions/upload-artifact@v4
         with:
           name: Yakit-English-${{ matrix.platform }}
