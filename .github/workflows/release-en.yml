@@ -24,71 +24,91 @@ on:
 permissions:
   contents: write
 
+env:
+  CUSTOM_YAKLANG_REPO: "professoxrmoriarty/yaklang"
+
 jobs:
   # ---------------------------------------------------------------------------
-  # အဆင့် (၁) - Official CDN မှ Yak Engine များနှင့် Chrome Extension ကို ဆွဲယူခြင်း
+  # အဆင့် (၁) - professoxrmoriarty/yaklang (သို့မဟုတ် Official CDN) မှ Yak Engine ဆွဲယူခြင်း
   # ---------------------------------------------------------------------------
   prepare-engine:
     name: Fetch Yak Engine Binaries & Chrome Plugin
     runs-on: ubuntu-latest
     outputs:
       yak_version: ${{ steps.fetch_bins.outputs.yak_version }}
+      engine_source: ${{ steps.fetch_bins.outputs.engine_source }}
     steps:
-      - name: 1. Download Latest Yak Engine & Chrome Plugin (Official Layout)
+      - name: 1. Download Yak Engine (Priority: professoxrmoriarty/yaklang -> Fallback: Official CDN)
         id: fetch_bins
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p bins/scripts
           CDN_PRIMARY="https://yaklang.oss-accelerate.aliyuncs.com/yak"
           CDN_FALLBACK="https://oss-qn.yaklang.com/yak"
 
-          # 1. Fetch Engine Version
+          # Official CDN Version ကို အရင်ဖတ်ထားမည်
           curl -fsSL --retry 3 "${CDN_PRIMARY}/latest/version.txt" -o bins/engine-version.txt || \
           curl -fsSL --retry 3 "${CDN_FALLBACK}/latest/version.txt" -o bins/engine-version.txt
-
           YAK_VER=$(tr -d '[:space:]' < bins/engine-version.txt)
-          echo "yak_version=${YAK_VER}" >> "$GITHUB_OUTPUT"
-          echo "Detected Yak Engine Version: ${YAK_VER}"
 
-          # 2. Download Chrome Extension (Required by Official Build)
+          # professoxrmoriarty/yaklang တွင် Release ရှိ/မရှိ စစ်ဆေးမည်
+          CUSTOM_TAG=$(gh api "repos/${{ env.CUSTOM_YAKLANG_REPO }}/releases/latest" --jq '.tag_name' 2>/dev/null || true)
+          ENGINE_SRC="Official Yaklang CDN (${YAK_VER})"
+
+          download_engine_bin() {
+            local BIN_NAME="$1"
+            local OUT_PATH="$2"
+            if [ -n "$CUSTOM_TAG" ] && [ "$CUSTOM_TAG" != "null" ]; then
+              if gh release download "$CUSTOM_TAG" --repo "${{ env.CUSTOM_YAKLANG_REPO }}" --pattern "$BIN_NAME" --output "$OUT_PATH" --clobber 2>/dev/null; then
+                echo "✅ Downloaded $BIN_NAME from ${{ env.CUSTOM_YAKLANG_REPO }} ($CUSTOM_TAG)"
+                ENGINE_SRC="${{ env.CUSTOM_YAKLANG_REPO }} (${CUSTOM_TAG})"
+                return 0
+              fi
+            fi
+            echo "⬇️ Downloading $BIN_NAME from Official CDN (${YAK_VER})..."
+            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN_NAME}" -o "$OUT_PATH" || \
+            curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN_NAME}" -o "$OUT_PATH"
+          }
+
+          # 1. Chrome Extension
           EXT_VER=$(curl -fsSL "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/latest-version.txt" | tr -d '[:space:]') || true
           if [ -n "$EXT_VER" ]; then
             curl -fsSL --retry 3 "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/yakit-chrome-extension-v${EXT_VER}.zip" \
               -o "bins/scripts/google-chrome-plugin.zip" || true
           fi
 
-          # 3. Linux Engines (Official build expects .zip files in bins/)
+          # 2. Linux Engines (.zip format required by official packaging scripts)
           for ARCH in amd64 arm64; do
             BIN="yak_linux_${ARCH}"
-            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN}" -o "bins/${BIN}" || \
-            curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN}" -o "bins/${BIN}"
+            download_engine_bin "${BIN}" "bins/${BIN}"
             chmod +x "bins/${BIN}"
             zip -j "bins/${BIN}.zip" "bins/${BIN}"
             rm -f "bins/${BIN}"
           done
 
-          # 4. Windows Normal Engine
-          curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
-          curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/yak_windows_amd64.exe" -o "bins/yak_windows_amd64.exe"
+          # 3. Windows Normal Engine
+          download_engine_bin "yak_windows_amd64.exe" "bins/yak_windows_amd64.exe"
           zip -j bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
           rm -f bins/yak_windows_amd64.exe
 
-          # 5. Windows Legacy Engine (Official name uses underscore: yak_windows_legacy_amd64.exe)
-          if curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows_legacy_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
-             curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/yak_windows_legacy_amd64.exe" -o "bins/yak_windows_amd64.exe" || \
+          # 4. Windows Legacy Engine
+          if download_engine_bin "yak_windows_legacy_amd64.exe" "bins/yak_windows_amd64.exe" || \
              curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe"; then
             zip -j bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
             rm -f bins/yak_windows_amd64.exe
           fi
 
-          # 6. macOS Engines & SHA256 files
+          # 5. macOS Engines & SHA256
           for ARCH in amd64 arm64; do
             BIN="yak_darwin_${ARCH}"
-            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN}" -o "bins/${BIN}" || \
-            curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN}" -o "bins/${BIN}"
+            download_engine_bin "${BIN}" "bins/${BIN}"
             chmod +x "bins/${BIN}"
-            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN}.sha256.txt" -o "bins/${BIN}.sha256.txt" || true
+            sha256sum "bins/${BIN}" | awk '{print $1}' > "bins/${BIN}.sha256.txt"
           done
 
+          echo "yak_version=${YAK_VER}" >> "$GITHUB_OUTPUT"
+          echo "engine_source=${ENGINE_SRC}" >> "$GITHUB_OUTPUT"
           ls -lh bins/ bins/scripts/
 
       - name: 2. Upload Engine Artifacts
@@ -144,7 +164,6 @@ jobs:
           echo "ref=${TARGET}" >> "$GITHUB_OUTPUT"
           ENV_TAG="${RAW_TAG#v}"
           echo "ENV_TAG=${ENV_TAG}" >> "$GITHUB_ENV"
-          echo "Building Ref: ${TARGET} with ENV_TAG: ${ENV_TAG}"
 
       - name: 2. Checkout English Edition Code
         uses: actions/checkout@v4
@@ -172,10 +191,9 @@ jobs:
           name: yak-engine-bins
           path: bins/
 
-      - name: 7. Prepare Binaries & Unpack Linux Zips if Needed by CLI
+      - name: 7. Prepare Binaries for Both Official Scripts & CLI
         run: |
           chmod +x bins/yak_darwin_* 2>/dev/null || true
-          # CLI direct mode သုံးပါက unzipped binary နှင့် zip နှစ်မျိုးလုံး အဆင်သင့်ရှိနေစေရန်
           if [ -f "bins/yak_linux_amd64.zip" ] && [ ! -f "bins/yak_linux_amd64" ]; then
             unzip -o bins/yak_linux_amd64.zip -d bins/ || true
             chmod +x bins/yak_linux_amd64 || true
@@ -220,7 +238,6 @@ jobs:
         run: |
           mkdir -p release dist
 
-          # Official buildPreScript.sh + CLI / Builder တွဲဖက်အသုံးပြုခြင်း
           for PROD in yakit irify memfit; do
             echo "======================================"
             echo "Building Product: ${PROD} (${{ matrix.platform }})"
@@ -285,7 +302,6 @@ jobs:
             FINAL_TAG="v$(date +'%Y.%m.%d')-en"
           fi
           echo "tag=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
-          echo "=== Downloaded Release Assets ==="
           find release-assets/ -type f -exec ls -lh {} +
 
       - name: 3. Publish Yakit Release
@@ -297,11 +313,8 @@ jobs:
           body: |
             ### Yakit English Edition — ${{ steps.resolve_tag.outputs.tag }}
             * **Default Language:** English (`en`) enabled out of the box.
-            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
             * **Supported Platforms:** Windows (`.exe`), macOS Apple Silicon & Intel (`.dmg`), Linux x64/arm64 (`.AppImage`).
-            * **Unsigned Installer Note:**
-              * **Windows:** SmartScreen တက်လာပါက `More info` → `Run anyway` ကို နှိပ်ပါ။
-              * **macOS:** `sudo xattr -rd com.apple.quarantine /Applications/Yakit.app` ကို Run ၍ ဖွင့်ပါ။
           draft: false
           prerelease: false
           files: |
@@ -318,7 +331,7 @@ jobs:
           body: |
             ### IRify English Edition — ${{ steps.resolve_tag.outputs.tag }}-irify
             * **Default Language:** English (`en`) enabled out of the box.
-            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
             * **Description:** Static code analysis & rule evaluation brought to GUI.
           draft: false
           prerelease: false
@@ -336,7 +349,7 @@ jobs:
           body: |
             ### Memfit AI English Edition — ${{ steps.resolve_tag.outputs.tag }}-memfit
             * **Default Language:** English (`en`) enabled out of the box.
-            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.yak_version }}`
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
             * **Description:** Open-source cybersecurity AI Agent orchestration framework.
           draft: false
           prerelease: false
