@@ -157,41 +157,59 @@ jobs:
           def has_zh(text):
               return bool(zh_char_re.search(str(text)))
 
+          # Trailing comma (,}) သို့မဟုတ် JSON syntax အမှားပါနေလျှင် အလိုအလျောက် သန့်စင်ဖတ်ပေးမည့် Function
+          def safe_load_json(filepath, default_val=None):
+              if default_val is None:
+                  default_val = {}
+              if not os.path.exists(filepath):
+                  return default_val
+              try:
+                  with open(filepath, 'r', encoding='utf-8') as f:
+                      raw = f.read()
+                  return json.loads(raw)
+              except Exception:
+                  try:
+                      # Trailing commas (, } သို့မဟုတ် , ]) ကို အလိုအလျောက် ဖယ်ရှားပြီး ပြန်ဖတ်မည်
+                      cleaned = re.sub(r',\s*([}\]])', r'\1', raw)
+                      data = json.loads(cleaned)
+                      # သန့်စင်ပြီးသား JSON ကို ဖိုင်ထဲသို့ ပြန်သိမ်းပေးထားမည်
+                      with open(filepath, 'w', encoding='utf-8') as fw:
+                          json.dump(data, fw, ensure_ascii=False, indent=2)
+                      print(f"[Auto-Fixed JSON] Cleaned trailing commas in {filepath}")
+                      return data
+                  except Exception as e:
+                      print(f"[Warning] Skipping malformed JSON file {filepath}: {e}")
+                      return default_val
+
           exact_glossary = {}
           inline_glossary = {}
           post_fix_patterns = []
 
-          if os.path.exists(GLOSSARY_FILE):
-              with open(GLOSSARY_FILE, 'r', encoding='utf-8') as f:
-                  g_data = json.load(f)
+          g_data = safe_load_json(GLOSSARY_FILE, {})
+          if isinstance(g_data, dict):
               for _, mapping in g_data.get("terms", {}).items():
                   if isinstance(mapping, dict):
                       exact_glossary.update(mapping)
                       inline_glossary.update(mapping)
-              exact_glossary.update(g_data.get("exact_only", {}))
-              for pat, repl in g_data.get("post_fixes", {}).items():
-                  post_fix_patterns.append((re.compile(pat, re.IGNORECASE), repl))
+              if isinstance(g_data.get("exact_only"), dict):
+                  exact_glossary.update(g_data.get("exact_only", {}))
+              if isinstance(g_data.get("post_fixes"), dict):
+                  for pat, repl in g_data.get("post_fixes", {}).items():
+                      try:
+                          post_fix_patterns.append((re.compile(pat, re.IGNORECASE), repl))
+                      except Exception:
+                          pass
 
           sorted_inline_keys = sorted(inline_glossary.keys(), key=len, reverse=True)
 
           cache = {}
-          if os.path.exists(YAKLANG_SHARED_CACHE):
-              try:
-                  with open(YAKLANG_SHARED_CACHE, 'r', encoding='utf-8') as f:
-                      shared_c = json.load(f)
-                      if isinstance(shared_c, dict):
-                          cache.update(shared_c)
-              except Exception:
-                  pass
+          shared_c = safe_load_json(YAKLANG_SHARED_CACHE, {})
+          if isinstance(shared_c, dict):
+              cache.update(shared_c)
 
-          if os.path.exists(CACHE_FILE):
-              try:
-                  with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-                      local_c = json.load(f)
-                      if isinstance(local_c, dict):
-                          cache.update(local_c)
-              except Exception:
-                  pass
+          local_c = safe_load_json(CACHE_FILE, {})
+          if isinstance(local_c, dict):
+              cache.update(local_c)
 
           prev_snapshot = cache.get(META_KEY, {}) if isinstance(cache.get(META_KEY), dict) else {}
           current_snapshot = {**inline_glossary, **exact_glossary}
@@ -330,6 +348,8 @@ jobs:
 
           # 1. Sync & Translate JSON Locales
           def collect_json_zh(zh_obj, en_obj, collected):
+              if not isinstance(zh_obj, dict):
+                  return
               for k, v in zh_obj.items():
                   if isinstance(v, dict):
                       collect_json_zh(v, en_obj.get(k, {}) if isinstance(en_obj.get(k), dict) else {}, collected)
@@ -339,6 +359,8 @@ jobs:
 
           def apply_json_zh(zh_obj, en_obj):
               changed = False
+              if not isinstance(zh_obj, dict):
+                  return False
               for k, v in zh_obj.items():
                   if isinstance(v, dict):
                       if k not in en_obj or not isinstance(en_obj[k], dict):
@@ -361,15 +383,12 @@ jobs:
                       continue
                   zh_path = os.path.join(ZH_DIR, fname)
                   en_path = os.path.join(EN_DIR, fname)
-                  with open(zh_path, 'r', encoding='utf-8') as f:
-                      zh_data = json.load(f)
-                  en_data = {}
-                  if os.path.exists(en_path):
-                      try:
-                          with open(en_path, 'r', encoding='utf-8') as f:
-                              en_data = json.load(f)
-                      except Exception:
-                          en_data = {}
+                  zh_data = safe_load_json(zh_path, {})
+                  en_data = safe_load_json(en_path, {})
+                  if not isinstance(zh_data, dict):
+                      continue
+                  if not isinstance(en_data, dict):
+                      en_data = {}
                   collect_json_zh(zh_data, en_data, json_zh_strings)
                   json_pairs.append((en_path, zh_data, en_data))
 
@@ -405,6 +424,7 @@ jobs:
                           if not has_zh(content):
                               continue
                           file_has_target = False
+                          is_tsx = file.endswith('.tsx')
                           for m in TOKEN_RE.finditer(content):
                               comment, sq, dq, tl, jsx = m.groups()
                               if comment:
@@ -415,7 +435,7 @@ jobs:
                                   if inner.strip() not in IGNORE_STRINGS:
                                       source_zh_strings.add(inner)
                                       file_has_target = True
-                              elif jsx and has_zh(jsx):
+                              elif is_tsx and jsx and has_zh(jsx):
                                   inner = jsx[1:-1].strip()
                                   if inner and inner not in IGNORE_STRINGS:
                                       source_zh_strings.add(inner)
@@ -438,6 +458,7 @@ jobs:
           for full_path in source_files:
               with open(full_path, 'r', encoding='utf-8') as f:
                   content = f.read()
+              is_tsx = full_path.endswith('.tsx')
               def replacer(m):
                   comment, sq, dq, tl, jsx = m.groups()
                   if comment:
@@ -452,7 +473,7 @@ jobs:
                           return token
                       trans = sanitize_for_quote(cache[inner], quote_char)
                       return f"{quote_char}{trans}{quote_char}"
-                  if jsx:
+                  if is_tsx and jsx:
                       inner_raw = jsx[1:-1]
                       inner_stripped = inner_raw.strip()
                       if not inner_stripped or inner_stripped not in cache or has_zh(cache[inner_stripped]):
