@@ -688,7 +688,7 @@
     "traffic": "流量",
     "risk": "漏洞",
     "sessionHistory": "会话历史",
-    "taskList": "任务列表",
+    "taskList": "异步任务",
     "timeline": "时间线",
     "exportLog": "导出日志",
     "viewLog": "查看日志",
@@ -715,6 +715,7 @@
     "newChatTitle": "新会话",
     "backToHome": "回到首页",
     "newChat": "新建会话",
+    "whatsNew": "更新说明",
     "log": "日志",
     "exportLog": "导出日志",
     "taskDetail": "任务详情"

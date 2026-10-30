@@ -688,7 +688,7 @@
     "traffic": "Traffic",
     "risk": "Risks",
     "sessionHistory": "Session History",
-    "taskList": "Task List",
+    "taskList": "Async Tasks",
     "timeline": "Timeline",
     "exportLog": "Export Logs",
     "viewLog": "View Logs",
@@ -715,6 +715,7 @@
     "newChatTitle": "New Session",
     "backToHome": "Back to Home",
     "newChat": "New Session",
+    "whatsNew": "What's New",
     "log": "Log",
     "exportLog": "Export Log",
     "taskDetail": "Task Detail"
