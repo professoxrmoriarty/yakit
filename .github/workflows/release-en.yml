@@ -87,6 +87,12 @@ jobs:
             fi
           fi
 
+          # 1b. Pull Translated Scripts, AI Crawler & SyntaxFlow Bundles into bins/scripts/
+          for SUB_REPO in awesome-yak-scripts pentest-crawler-ai-enhance syntaxflow; do
+            gh release download --repo "professoxrmoriarty/${SUB_REPO}" --pattern "${SUB_REPO}-en.zip" \
+              --output "bins/scripts/${SUB_REPO}-en.zip" --clobber 2>/dev/null || true
+          done
+
           # 2. Linux Engines (Keep both raw binary for CLI and .zip for packaging)
           for ARCH in amd64 arm64; do
             BIN="yak_linux_${ARCH}"
