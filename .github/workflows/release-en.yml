@@ -78,11 +78,13 @@ jobs:
             curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN_NAME}" -o "$OUT_PATH"
           }
 
-          # 1. Chrome Extension
-          EXT_VER=$(curl -fsSL "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/latest-version.txt" | tr -d '[:space:]') || true
-          if [ -n "$EXT_VER" ]; then
-            curl -fsSL --retry 3 "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/yakit-chrome-extension-v${EXT_VER}.zip" \
-              -o "bins/scripts/google-chrome-plugin.zip" || true
+          # 1. Chrome Extension (Priority: professoxrmoriarty/yaklang-chrome-extension -> Fallback: Official CDN)
+          if ! gh release download --repo "professoxrmoriarty/yaklang-chrome-extension" --pattern "google-chrome-plugin.zip" --output "bins/scripts/google-chrome-plugin.zip" --clobber 2>/dev/null; then
+            EXT_VER=$(curl -fsSL "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/latest-version.txt" | tr -d '[:space:]') || true
+            if [ -n "$EXT_VER" ]; then
+              curl -fsSL --retry 3 "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/yakit-chrome-extension-v${EXT_VER}.zip" \
+                -o "bins/scripts/google-chrome-plugin.zip" || true
+            fi
           fi
 
           # 2. Linux Engines (Keep both raw binary for CLI and .zip for packaging)
