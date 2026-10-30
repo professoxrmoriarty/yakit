@@ -20,6 +20,10 @@ on:
         description: 'Build လုပ်မည့် Branch (ပုံမှန် english-edition)'
         required: false
         default: 'english-edition'
+      skip_mac:
+        description: 'macOS Build ကို ကျော်ပြီး Windows/Linux သာ အမြန်ထုတ်မည်လား? (true/false)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: write
@@ -122,7 +126,10 @@ jobs:
   build-matrix:
     name: "Build English Edition (${{ matrix.platform }})"
     needs: prepare-engine
+    if: ${{ !(matrix.platform == 'mac' && inputs.skip_mac == 'true') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -232,7 +239,6 @@ jobs:
             yarn install --ignore-engines
           fi
 
-          # Upstream repo ကို fetch လုပ်ပြီး Syntax Error ရှိနေသော ဖိုင်များကို အလိုအလျောက် ပြန်ကုစားပေးမည်
           git remote add upstream https://github.com/yaklang/yakit.git 2>/dev/null || git remote set-url upstream https://github.com/yaklang/yakit.git
           git fetch --depth=1 upstream master || git fetch --depth=1 upstream main
 
@@ -257,7 +263,6 @@ jobs:
           if (ts && !ts.createSourceFile && ts.default) {
             ts = ts.default;
           }
-          console.log("Loaded TypeScript Compiler version:", ts ? ts.version : "NOT FOUND");
 
           function walk(dir, list = []) {
             if (!fs.existsSync(dir)) return list;
@@ -288,13 +293,7 @@ jobs:
                 JSON.parse(content);
               } else if (ts) {
                 const isTsx = rel.endsWith(".tsx");
-                const sf = ts.createSourceFile(
-                  rel,
-                  content,
-                  99,
-                  true,
-                  isTsx ? 4 : 3
-                );
+                const sf = ts.createSourceFile(rel, content, 99, true, isTsx ? 4 : 3);
                 if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
                   broken = true;
                   reason = String(sf.parseDiagnostics[0].messageText);
@@ -325,9 +324,7 @@ jobs:
                 execFileSync("git", ["checkout", "FETCH_HEAD", "--", rel], { stdio: "ignore" });
                 console.log("[Auto-Healed] Restored clean upstream file:", rel, "->", reason);
                 healedCount++;
-              } catch (err) {
-                console.log("[Warning] Could not checkout upstream file:", rel);
-              }
+              } catch (err) {}
             }
           }
           console.log("Syntax scan complete. Checked", allFiles.length, "files, auto-healed", healedCount, "file(s).");
@@ -367,25 +364,26 @@ jobs:
             dist/*.AppImage
             !release/*unpacked*
             !dist/*unpacked*
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 3
 
   # ---------------------------------------------------------------------------
-  # အဆင့် (၃) - ပြီးပြည့်စုံသော (၃) မျိုးခွဲ Release များကို GitHub သို့ တင်ခြင်း
+  # အဆင့် (၃) - OS တစ်ခု Cancel/Fail ဖြစ်လျှင်လည်း ပြီးစီးသမျှ OS များကို GitHub Release တင်ပေးခြင်း
   # ---------------------------------------------------------------------------
   publish-release:
     name: "Publish English Release (Yakit, IRify, Memfit AI)"
     needs: [prepare-engine, build-matrix]
+    if: always() && needs.prepare-engine.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: "1. Download All OS Artifacts"
+      - name: "1. Download All Completed OS Artifacts"
         uses: actions/download-artifact@v4
         with:
           pattern: Yakit-English-*
           path: release-assets
           merge-multiple: true
 
-      - name: "2. Resolve Final Release Tag"
+      - name: "2. Verify & Resolve Final Release Tag"
         id: resolve_tag
         run: |
           INPUT_TAG="${{ inputs.tag_name }}"
@@ -397,7 +395,15 @@ jobs:
             FINAL_TAG="v$(date +'%Y.%m.%d')-en"
           fi
           echo "tag=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
+
+          mkdir -p release-assets
+          ASSET_COUNT=$(find release-assets/ -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \) | wc -l)
+          echo "Found ${ASSET_COUNT} installer file(s):"
           find release-assets/ -type f -exec ls -lh {} +
+          if [ "$ASSET_COUNT" -eq 0 ]; then
+            echo "No installer artifacts were built. Skipping release creation."
+            exit 1
+          fi
 
       - name: "3. Publish Yakit Release"
         uses: softprops/action-gh-release@v2
