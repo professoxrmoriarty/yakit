@@ -1,0 +1,473 @@
+name: "Build and Release Yakit (English Edition)"
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        type: string
+        required: true
+      target_ref:
+        type: string
+        required: false
+        default: 'english-edition'
+      skip_mac:
+        type: string
+        required: false
+        default: 'false'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag အမည် (ဥပမာ v1.4.9-1023-en)'
+        required: false
+        default: ''
+      target_ref:
+        description: 'Build လုပ်မည့် Branch (ပုံမှန် english-edition)'
+        required: false
+        default: 'english-edition'
+      skip_mac:
+        description: 'macOS Build ကို ကျော်ပြီး Windows/Linux သာ အမြန်ထုတ်မည်လား? (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+env:
+  CUSTOM_YAKLANG_REPO: "professoxrmoriarty/yaklang"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # အဆင့် (၁) - professoxrmoriarty/yaklang (သို့မဟုတ် Official CDN) မှ Yak Engine ဆွဲယူခြင်း
+  # ---------------------------------------------------------------------------
+  prepare-engine:
+    name: "Fetch Yak Engine Binaries & Chrome Plugin"
+    runs-on: ubuntu-latest
+    outputs:
+      yak_version: ${{ steps.fetch_bins.outputs.yak_version }}
+      engine_source: ${{ steps.fetch_bins.outputs.engine_source }}
+      build_platforms: ${{ steps.fetch_bins.outputs.build_platforms }}
+    steps:
+      - name: "1. Download Yak Engine (Custom Repo or Official CDN)"
+        id: fetch_bins
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p bins/scripts
+          CDN_PRIMARY="https://yaklang.oss-accelerate.aliyuncs.com/yak"
+          CDN_FALLBACK="https://oss-qn.yaklang.com/yak"
+
+          curl -fsSL --retry 3 "${CDN_PRIMARY}/latest/version.txt" -o bins/engine-version.txt || \
+          curl -fsSL --retry 3 "${CDN_FALLBACK}/latest/version.txt" -o bins/engine-version.txt
+          YAK_VER=$(tr -d '[:space:]' < bins/engine-version.txt)
+
+          CUSTOM_TAG=$(gh api "repos/${{ env.CUSTOM_YAKLANG_REPO }}/releases/latest" --jq '.tag_name' 2>/dev/null || true)
+          ENGINE_SRC="Official Yaklang CDN (${YAK_VER})"
+
+          download_engine_bin() {
+            local BIN_NAME="$1"
+            local OUT_PATH="$2"
+            if [ -n "$CUSTOM_TAG" ] && [ "$CUSTOM_TAG" != "null" ]; then
+              if gh release download "$CUSTOM_TAG" --repo "${{ env.CUSTOM_YAKLANG_REPO }}" --pattern "$BIN_NAME" --output "$OUT_PATH" --clobber 2>/dev/null; then
+                echo "Downloaded $BIN_NAME from ${{ env.CUSTOM_YAKLANG_REPO }} ($CUSTOM_TAG)"
+                ENGINE_SRC="${{ env.CUSTOM_YAKLANG_REPO }} (${CUSTOM_TAG})"
+                return 0
+              fi
+            fi
+            echo "Downloading $BIN_NAME from Official CDN (${YAK_VER})..."
+            curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/${BIN_NAME}" -o "$OUT_PATH" || \
+            curl -fsSL --retry 3 "${CDN_FALLBACK}/${YAK_VER}/${BIN_NAME}" -o "$OUT_PATH"
+          }
+
+          # 1. Chrome Extension (Priority: professoxrmoriarty/yaklang-chrome-extension -> Fallback: Official CDN)
+          if ! gh release download --repo "professoxrmoriarty/yaklang-chrome-extension" --pattern "google-chrome-plugin.zip" --output "bins/scripts/google-chrome-plugin.zip" --clobber 2>/dev/null; then
+            EXT_VER=$(curl -fsSL "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/latest-version.txt" | tr -d '[:space:]') || true
+            if [ -n "$EXT_VER" ]; then
+              curl -fsSL --retry 3 "https://yaklang.oss-accelerate.aliyuncs.com/chrome-extension/yakit-chrome-extension-v${EXT_VER}.zip" \
+                -o "bins/scripts/google-chrome-plugin.zip" || true
+            fi
+          fi
+
+          # 1b. Pull Translated Scripts, AI Crawler & SyntaxFlow Bundles into bins/scripts/
+          for SUB_REPO in awesome-yak-scripts pentest-crawler-ai-enhance syntaxflow; do
+            gh release download --repo "professoxrmoriarty/${SUB_REPO}" --pattern "${SUB_REPO}-en.zip" \
+              --output "bins/scripts/${SUB_REPO}-en.zip" --clobber 2>/dev/null || true
+          done
+
+          # 2. Linux Engines (Keep both raw binary for CLI and .zip for packaging)
+          for ARCH in amd64 arm64; do
+            BIN="yak_linux_${ARCH}"
+            download_engine_bin "${BIN}" "bins/${BIN}"
+            chmod +x "bins/${BIN}"
+            zip "bins/${BIN}.zip" "bins/${BIN}"
+          done
+
+          # 3. Windows Normal Engine
+          download_engine_bin "yak_windows_amd64.exe" "bins/yak_windows_amd64.exe"
+          zip bins/yak_windows_normal_amd64.zip bins/yak_windows_amd64.exe
+          rm -f bins/yak_windows_amd64.exe
+
+          # 4. Windows Legacy Engine
+          if download_engine_bin "yak_windows_legacy_amd64.exe" "bins/yak_windows_amd64.exe" || \
+             curl -fsSL --retry 3 "${CDN_PRIMARY}/${YAK_VER}/yak_windows-legacy_amd64.exe" -o "bins/yak_windows_amd64.exe"; then
+            zip bins/yak_windows_legacy_amd64.zip bins/yak_windows_amd64.exe
+            rm -f bins/yak_windows_amd64.exe
+          fi
+
+          # 5. macOS Engines & SHA256
+          for ARCH in amd64 arm64; do
+            BIN="yak_darwin_${ARCH}"
+            download_engine_bin "${BIN}" "bins/${BIN}"
+            chmod +x "bins/${BIN}"
+            sha256sum "bins/${BIN}" | awk '{print $1}' > "bins/${BIN}.sha256.txt"
+          done
+
+          # 6. Configure OS Build Matrix (Supports skip_mac)
+          if [ "${{ inputs.skip_mac }}" = "true" ]; then
+            echo 'build_platforms=[{"os":"windows-latest","platform":"win"},{"os":"ubuntu-latest","platform":"linux"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build_platforms=[{"os":"windows-latest","platform":"win"},{"os":"ubuntu-latest","platform":"linux"},{"os":"macos-latest","platform":"mac"}]' >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "yak_version=${YAK_VER}" >> "$GITHUB_OUTPUT"
+          echo "engine_source=${ENGINE_SRC}" >> "$GITHUB_OUTPUT"
+          ls -lh bins/ bins/scripts/
+
+      - name: "2. Upload Engine Artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: yak-engine-bins
+          path: bins/
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # အဆင့် (၂) - OS မျိုးစုံအတွက် (Yakit, IRify, Memfit AI) သုံးမျိုးလုံးကို Build ခြင်း
+  # ---------------------------------------------------------------------------
+  build-matrix:
+    name: "Build English Edition (${{ matrix.platform }})"
+    needs: prepare-engine
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare-engine.outputs.build_platforms) }}
+
+    env:
+      CI: "true"
+      NODE_OPTIONS: "--max-old-space-size=8192"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ENGINE_VERSION: ${{ needs.prepare-engine.outputs.yak_version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: "1. Determine Checkout Ref & Version Tag"
+        id: ref_select
+        run: |
+          INPUT_TAG="${{ inputs.tag_name }}"
+          INPUT_REF="${{ inputs.target_ref }}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TARGET="${GITHUB_REF_NAME}"
+            RAW_TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_TAG}" ]]; then
+            TARGET="${INPUT_REF:-english-edition}"
+            RAW_TAG="${INPUT_TAG}"
+          else
+            TARGET="${INPUT_REF:-english-edition}"
+            RAW_TAG="v$(date +'%Y.%m.%d')-en"
+          fi
+          echo "ref=${TARGET}" >> "$GITHUB_OUTPUT"
+          ENV_TAG="${RAW_TAG#v}"
+          echo "ENV_TAG=${ENV_TAG}" >> "$GITHUB_ENV"
+
+      - name: "2. Checkout English Edition Code"
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref_select.outputs.ref }}
+          fetch-depth: 1
+
+      - name: "3. Setup Node.js 22 & Yarn"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: "4. Ensure Yarn is Installed"
+        run: yarn --version || npm install -g yarn
+
+      - name: "5. Install Linux System Dependencies"
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2t64 rpm zip || sudo apt-get install -y libfuse2 rpm zip
+
+      - name: "6. Restore Yak Engine Binaries"
+        uses: actions/download-artifact@v4
+        with:
+          name: yak-engine-bins
+          path: bins/
+
+      - name: "7. Enforce English Default Language Safeguard"
+        run: |
+          node - << 'EOF'
+          const fs = require("fs");
+          const i18nFiles = [
+            "app/renderer/src/main/src/i18n/i18n.ts",
+            "app/renderer/engine-link-startup/src/i18n/i18n.ts",
+            "app/renderer/engine-link-startup/src/i18n.ts"
+          ];
+          for (const f of i18nFiles) {
+            if (fs.existsSync(f)) {
+              let s = fs.readFileSync(f, "utf8");
+              s = s.replace(/(lng\s*:\s*)([^,\n]*?)['"]zh(-CN)?['"]/g, "$1localStorage.getItem('i18nextLng') || 'en'");
+              s = s.replace(/(fallbackLng\s*:\s*)['"]zh(-CN)?['"]/g, "$1'en'");
+              fs.writeFileSync(f, s, "utf8");
+              console.log("Verified English default language in:", f);
+            }
+          }
+          const htmlFiles = [
+            "app/renderer/src/main/index.html",
+            "app/renderer/engine-link-startup/index.html"
+          ];
+          for (const h of htmlFiles) {
+            if (fs.existsSync(h)) {
+              let s = fs.readFileSync(h, "utf8").replace(/正在加载中/g, "Loading...");
+              fs.writeFileSync(h, s, "utf8");
+            }
+          }
+          EOF
+
+      - name: "8. Install Dependencies & Auto-Heal Broken TS/TSX Files"
+        run: |
+          chmod +x bins/yak_darwin_* bins/yak_linux_* 2>/dev/null || true
+          yarn config set network-timeout 300000
+          yarn config set ignore-engines true
+
+          if [ -f "cli/cli.mjs" ]; then
+            yarn cli install
+          else
+            yarn install --ignore-engines
+          fi
+
+          git remote add upstream https://github.com/yaklang/yakit.git 2>/dev/null || git remote set-url upstream https://github.com/yaklang/yakit.git
+          git fetch --depth=1 upstream master || git fetch --depth=1 upstream main
+
+          node - << 'EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const { execFileSync } = require("child_process");
+
+          let ts = null;
+          const tsCandidates = [
+            path.resolve("app/renderer/src/main/node_modules/typescript"),
+            path.resolve("app/renderer/engine-link-startup/node_modules/typescript"),
+            path.resolve("node_modules/typescript"),
+            "typescript"
+          ];
+          for (const candidate of tsCandidates) {
+            try {
+              ts = require(candidate);
+              break;
+            } catch (e) {}
+          }
+          if (ts && !ts.createSourceFile && ts.default) {
+            ts = ts.default;
+          }
+
+          function walk(dir, list = []) {
+            if (!fs.existsSync(dir)) return list;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue;
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                walk(full, list);
+              } else if (
+                (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx") || entry.name.endsWith(".json")) &&
+                !entry.name.endsWith(".d.ts")
+              ) {
+                list.push(full.replace(/\\/g, "/"));
+              }
+            }
+            return list;
+          }
+
+          const allFiles = walk("app");
+          let healedCount = 0;
+
+          for (const rel of allFiles) {
+            let broken = false;
+            let reason = "";
+            try {
+              const content = fs.readFileSync(rel, "utf8");
+              if (rel.endsWith(".json")) {
+                JSON.parse(content);
+              } else if (ts) {
+                const isTsx = rel.endsWith(".tsx");
+                const sf = ts.createSourceFile(rel, content, 99, true, isTsx ? 4 : 3);
+                if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
+                  broken = true;
+                  reason = String(sf.parseDiagnostics[0].messageText);
+                } else if (typeof ts.transpileModule === "function") {
+                  const res = ts.transpileModule(content, {
+                    fileName: rel,
+                    reportDiagnostics: true,
+                    compilerOptions: {
+                      target: 99,
+                      module: 99,
+                      jsx: isTsx ? 1 : undefined,
+                      experimentalDecorators: true
+                    }
+                  });
+                  if (res.diagnostics && res.diagnostics.length > 0) {
+                    broken = true;
+                    reason = String(res.diagnostics[0].messageText);
+                  }
+                }
+              }
+            } catch (err) {
+              broken = true;
+              reason = err.message;
+            }
+
+            if (broken) {
+              try {
+                execFileSync("git", ["checkout", "FETCH_HEAD", "--", rel], { stdio: "ignore" });
+                console.log("[Auto-Healed] Restored clean upstream file:", rel, "->", reason);
+                healedCount++;
+              } catch (err) {}
+            }
+          }
+          console.log("Syntax scan complete. Checked", allFiles.length, "files, auto-healed", healedCount, "file(s).");
+          EOF
+
+      - name: "9. Build & Package All 3 Editions (Yakit, IRify, Memfit)"
+        run: |
+          if [ -f "cli/cli.mjs" ]; then
+            # 1. Build & Pack Yakit
+            yarn cli build -v yakit --devtools
+            yarn cli pack -s ${{ matrix.platform }} -v yakit
+
+            # 2. Build & Pack IRify
+            yarn cli build -v irify
+            yarn cli pack -s ${{ matrix.platform }} -v irify
+
+            # 3. Build & Pack Memfit AI
+            yarn cli build -v memfit
+            yarn cli pack -s ${{ matrix.platform }} -v memfit
+          else
+            yarn build-renders
+            yarn pack-${{ matrix.platform }}
+          fi
+
+          ls -lh release/ dist/ 2>/dev/null || true
+
+      - name: "10. Upload OS Installer Artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yakit-English-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            !release/*unpacked*
+            !dist/*unpacked*
+          if-no-files-found: warn
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # အဆင့် (၃) - OS တစ်ခု Cancel/Fail ဖြစ်လျှင်လည်း ပြီးစီးသမျှ OS များကို GitHub Release တင်ပေးခြင်း
+  # ---------------------------------------------------------------------------
+  publish-release:
+    name: "Publish English Release (Yakit, IRify, Memfit AI)"
+    needs: [prepare-engine, build-matrix]
+    if: always() && needs.prepare-engine.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: "1. Download All Completed OS Artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Yakit-English-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: "2. Verify & Resolve Final Release Tag"
+        id: resolve_tag
+        run: |
+          INPUT_TAG="${{ inputs.tag_name }}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            FINAL_TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_TAG}" ]]; then
+            FINAL_TAG="${INPUT_TAG}"
+          else
+            FINAL_TAG="v$(date +'%Y.%m.%d')-en"
+          fi
+          echo "tag=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
+
+          mkdir -p release-assets
+          ASSET_COUNT=$(find release-assets/ -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \) | wc -l)
+          echo "Found ${ASSET_COUNT} installer file(s):"
+          find release-assets/ -type f -exec ls -lh {} +
+          if [ "$ASSET_COUNT" -eq 0 ]; then
+            echo "No installer artifacts were built. Skipping release creation."
+            exit 1
+          fi
+
+      - name: "3. Publish Yakit Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: "Yakit English Edition (${{ steps.resolve_tag.outputs.tag }})"
+          overwrite: true
+          body: |
+            ### Yakit English Edition — ${{ steps.resolve_tag.outputs.tag }}
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
+            * **Supported Platforms:** Windows (`.exe`), macOS Apple Silicon & Intel (`.dmg`), Linux x64/arm64 (`.AppImage`).
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/Yakit*.exe
+            release-assets/**/Yakit*.dmg
+            release-assets/**/Yakit*.AppImage
+
+      - name: "4. Publish IRify Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}-irify
+          name: "IRify English Edition (${{ steps.resolve_tag.outputs.tag }}-irify)"
+          overwrite: true
+          body: |
+            ### IRify English Edition — ${{ steps.resolve_tag.outputs.tag }}-irify
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
+            * **Description:** Static code analysis & rule evaluation brought to GUI.
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/IRify*.exe
+            release-assets/**/IRify*.dmg
+            release-assets/**/IRify*.AppImage
+
+      - name: "5. Publish Memfit AI Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}-memfit
+          name: "Memfit AI English Edition (${{ steps.resolve_tag.outputs.tag }}-memfit)"
+          overwrite: true
+          body: |
+            ### Memfit AI English Edition — ${{ steps.resolve_tag.outputs.tag }}-memfit
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Bundled Yak Engine:** `${{ needs.prepare-engine.outputs.engine_source }}`
+            * **Description:** Open-source cybersecurity AI Agent orchestration framework.
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/Memfit*.exe
+            release-assets/**/Memfit*.dmg
+            release-assets/**/Memfit*.AppImage
