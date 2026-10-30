@@ -314,7 +314,7 @@ const openStatefulRiskBatch = async (selection: 'all' | 'explicit', targetIds: n
     ...query,
     Search: '',
     Network: '',
-    RiskTypeList: ['SQL注入'],
+    RiskTypeList: ['SQL Injection'],
     Pagination: { Page: 1, Limit: 20, OrderBy: 'id', Order: 'asc' },
   }
   mocks.queryRisks.mockResolvedValue({
@@ -824,7 +824,7 @@ describe('YakitRiskTable 批量操作', () => {
     it.fails(`${selection} selection keeps the original risk set when an edited field shrinks the filter`, async () => {
       const risks = Array.from({ length: 1001 }, (_, index) => ({
         Id: index + 1,
-        RiskType: 'SQL注入',
+        RiskType: 'SQL Injection',
         Severity: 'high',
         Tags: '待验证',
       }))

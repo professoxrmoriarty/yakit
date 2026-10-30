@@ -429,7 +429,7 @@ describe('YakitRiskEditForm 验证人回填', () => {
   })
 
   it('不超过 1000 条时直接分页保存，请求期间禁止取消且成功后关闭', async () => {
-    mocks.finishValues.mockReturnValue({ risk_type: 'SQL注入', cvss: 5, disposal_status: ['确认'] })
+    mocks.finishValues.mockReturnValue({ risk_type: 'SQL Injection', cvss: 5, disposal_status: ['确认'] })
     const onSave = vi.fn()
     const pending = deferred<{ UpdatedCount: number }>()
     const execute = vi.fn(() => pending.promise)
@@ -445,7 +445,7 @@ describe('YakitRiskEditForm 验证人回填', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: '测试提交' }))
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ RiskType: 'SQL注入' }), {
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ RiskType: 'SQL Injection' }), {
       index: 0,
       page: 1,
       limit: 1000,
@@ -463,7 +463,7 @@ describe('YakitRiskEditForm 验证人回填', () => {
   })
 
   it.each([0, 1])('小批量仅更新 %i/2 条时提示实际数量并关闭', async (updatedCount) => {
-    mocks.finishValues.mockReturnValue({ risk_type: 'SQL注入', cvss: 5, disposal_status: ['确认'] })
+    mocks.finishValues.mockReturnValue({ risk_type: 'SQL Injection', cvss: 5, disposal_status: ['确认'] })
     const execute = vi.fn().mockResolvedValue({ UpdatedCount: updatedCount })
     const onSave = vi.fn()
     const onClose = vi.fn()
@@ -505,7 +505,7 @@ describe('YakitRiskEditForm 验证人回填', () => {
     const cvssInput = screen.getByTestId('cvss-input') as HTMLInputElement
     fireEvent.change(cvssInput, { target: { value: '5' } })
     mocks.finishValues.mockImplementation(() => ({
-      risk_type: 'SQL注入',
+      risk_type: 'SQL Injection',
       cvss: Number(cvssInput.value),
       disposal_status: ['确认'],
     }))
@@ -536,7 +536,7 @@ describe('YakitRiskEditForm 验证人回填', () => {
   })
 
   it('超过 1000 条时进入范围选择，执行成功后仍由用户手动关闭', async () => {
-    mocks.finishValues.mockReturnValue({ risk_type: 'SQL注入', cvss: 5, disposal_status: ['确认'] })
+    mocks.finishValues.mockReturnValue({ risk_type: 'SQL Injection', cvss: 5, disposal_status: ['确认'] })
     const execute = vi.fn(async (_info, scope) => ({ UpdatedCount: scope.count }))
     const onClose = vi.fn()
     render(
@@ -554,7 +554,7 @@ describe('YakitRiskEditForm 验证人回填', () => {
     expect(execute).not.toHaveBeenCalled()
     fireEvent.click(screen.getAllByRole('button', { name: 'BatchScopeSelector.execute' })[0])
     await waitFor(() => expect(screen.getByText('BatchScopeSelector.success')).toBeInTheDocument())
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ RiskType: 'SQL注入' }), {
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ RiskType: 'SQL Injection' }), {
       index: 0,
       page: 1,
       limit: 1000,

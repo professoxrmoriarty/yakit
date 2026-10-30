@@ -171,13 +171,13 @@ describe('FlowMarkEditForm', () => {
       />,
     )
     await act(async () => {
-      mocks.formProps?.onFinish({ Severity: '高危', StatusReason: ' investigate ' })
+      mocks.formProps?.onFinish({ Severity: 'High', StatusReason: ' investigate ' })
     })
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
     expect(mocks.batchScopeProps).toBeUndefined()
     expect(mocks.apiBatchSetHTTPFlowIssueFields).toHaveBeenCalledWith({
       Token: 'token',
-      SetSeverity: '高危',
+      SetSeverity: 'High',
       StatusReason: 'investigate',
       Filter: {
         Status: '待修复',
@@ -188,7 +188,7 @@ describe('FlowMarkEditForm', () => {
       },
     })
     expect(mocks.apiBatchSetHTTPFlowIssueFields.mock.calls[0][0]).not.toHaveProperty('Ids')
-    expect(onSuccess).toHaveBeenCalledWith({ Ids: [7, 8], Severity: '高危', StatusReason: 'investigate' })
+    expect(onSuccess).toHaveBeenCalledWith({ Ids: [7, 8], Severity: 'High', StatusReason: 'investigate' })
   })
 
   it('blocks duplicate submission and cancellation while a small batch is pending', async () => {
@@ -204,8 +204,8 @@ describe('FlowMarkEditForm', () => {
 
     const cancel = screen.getByRole('button', { name: 'YakitButton.cancel' })
     act(() => {
-      mocks.formProps?.onFinish({ Severity: '高危' })
-      mocks.formProps?.onFinish({ Severity: '高危' })
+      mocks.formProps?.onFinish({ Severity: 'High' })
+      mocks.formProps?.onFinish({ Severity: 'High' })
       cancel.click()
     })
 
@@ -218,7 +218,7 @@ describe('FlowMarkEditForm', () => {
 
     await act(async () => resolveRequest({ UpdatedCount: 2 }))
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
-    expect(onSuccess).toHaveBeenCalledExactlyOnceWith({ Ids: [7, 8], Severity: '高危' })
+    expect(onSuccess).toHaveBeenCalledExactlyOnceWith({ Ids: [7, 8], Severity: 'High' })
     expect(mocks.apiBatchSetHTTPFlowIssueFields).toHaveBeenCalledOnce()
   })
 
@@ -247,7 +247,7 @@ describe('FlowMarkEditForm', () => {
       />,
     )
 
-    const values = { IssueType: 'SQL注入', Severity: '高危', Status: '待修复', StatusReason: ' investigate ' }
+    const values = { IssueType: 'SQL Injection', Severity: 'High', Status: '待修复', StatusReason: ' investigate ' }
     await user.selectOptions(screen.getByLabelText('HTTPFlowTable.problemType'), values.IssueType)
     await user.selectOptions(screen.getByLabelText('HTTPFlowTable.severity'), values.Severity)
     await user.selectOptions(screen.getByLabelText('HTTPFlowTable.disposalStatus'), values.Status)
@@ -344,7 +344,7 @@ describe('FlowMarkEditForm', () => {
     const onRefresh = vi.fn()
     render(<FlowMarkEditForm batch batchCount={2} ids={[7, 8]} onClose={onClose} onRefresh={onRefresh} />)
     await act(async () => {
-      mocks.formProps?.onFinish({ Severity: '中危' })
+      mocks.formProps?.onFinish({ Severity: 'Medium' })
     })
     await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce())
     expect(onClose).toHaveBeenCalledOnce()
@@ -379,11 +379,11 @@ describe('FlowMarkEditForm', () => {
         const updatedIds: number[] = []
         createStatefulFlowMock(flows, updatedIds)
 
-        await renderStatefulBatch(selection, { IssueType: 'SQL注入' })
+        await renderStatefulBatch(selection, { IssueType: 'SQL Injection' })
 
         expect(new Set(updatedIds).size).toBe(2501)
         expect(updatedIds).toHaveLength(2501)
-        expect(flows.every((flow) => flow.IssueType === 'SQL注入')).toBe(true)
+        expect(flows.every((flow) => flow.IssueType === 'SQL Injection')).toBe(true)
       },
     )
   }
