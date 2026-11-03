@@ -36,20 +36,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Backup existing workflow and cache files
           mkdir -p /tmp/backup/workflows
           cp -r .github/workflows/* /tmp/backup/workflows/ 2>/dev/null || true
           [ -f ".github/security_glossary.json" ] && cp .github/security_glossary.json /tmp/backup/
           [ -f ".i18n_cache.json" ] && cp .i18n_cache.json /tmp/backup/
 
-          # Fetch and merge from upstream
           git remote add upstream "${{ env.UPSTREAM_REPO }}" 2>/dev/null || git remote set-url upstream "${{ env.UPSTREAM_REPO }}"
           git fetch upstream "${{ env.UPSTREAM_BRANCH }}" --tags
 
           UP_REF="upstream/${{ env.UPSTREAM_BRANCH }}"
           git checkout -B "${{ env.TARGET_BRANCH }}" "origin/${{ env.TARGET_BRANCH }}" 2>/dev/null || git checkout -B "${{ env.TARGET_BRANCH }}" "$UP_REF"
 
-          # Diff Sync: Keep new changes from upstream
           if ! git merge "$UP_REF" -X theirs --allow-unrelated-histories --no-edit; then
             git status --porcelain | awk '$1=="DU" || $1=="UD" {print $2}' | xargs -r git rm -f
             git checkout --theirs . || true
@@ -57,14 +54,12 @@ jobs:
             git commit --no-edit || true
           fi
 
-          # Restore our custom workflows and cache
           rm -rf .github/workflows/*
           mkdir -p .github/workflows
           cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
           [ -f "/tmp/backup/security_glossary.json" ] && cp /tmp/backup/security_glossary.json .github/
           [ -f "/tmp/backup/.i18n_cache.json" ] && cp /tmp/backup/.i18n_cache.json .
 
-          # Fetch shared cache from Yaklang
           git clone --depth 1 --branch english-edition "${{ env.YAKLANG_FORK_REPO }}" /tmp/yaklang_fork 2>/dev/null || true
           [ -f "/tmp/yaklang_fork/.i18n_cache.json" ] && cp "/tmp/yaklang_fork/.i18n_cache.json" /tmp/yaklang_cache.json
           rm -rf /tmp/yaklang_fork
@@ -81,7 +76,7 @@ jobs:
           python-version: '3.11'
       - run: python3 -m pip install --upgrade pip deep-translator PyYAML
 
-      - name: "5. Progressive Translation & Source File Override"
+      - name: "5. Progressive Translation, Exact Char Count & Override"
         id: translate
         run: |
           python3 - << 'EOF'
@@ -100,6 +95,7 @@ jobs:
           IGNORE_STRINGS = {"微软雅黑", "宋体", "黑体", "苹方", "楷体", "仿宋"}
 
           def has_zh(text): return bool(zh_char_re.search(str(text)))
+          def count_zh_chars(text): return len(zh_char_re.findall(str(text)))
 
           def safe_load_json(filepath):
               if not os.path.exists(filepath): return {}
@@ -153,51 +149,42 @@ jobs:
 
           zh_strings = set()
           source_files = []
+          total_zh_chars = 0
           
-          # 1. Scan Locales JSON
-          ZH_DIR = "app/renderer/src/main/public/locales/zh"
-          EN_DIR = "app/renderer/src/main/public/locales/en"
-          json_pairs = []
-          if os.path.exists(ZH_DIR):
-              os.makedirs(EN_DIR, exist_ok=True)
-              for fname in os.listdir(ZH_DIR):
-                  if fname.endswith(".json"):
-                      zh_path, en_path = os.path.join(ZH_DIR, fname), os.path.join(EN_DIR, fname)
-                      zh_data, en_data = safe_load_json(zh_path), safe_load_json(en_path)
-                      
-                      def collect_json_zh(z_obj):
-                          if isinstance(z_obj, dict):
-                              for k, v in z_obj.items():
-                                  if isinstance(v, dict): collect_json_zh(v)
-                                  elif isinstance(v, str) and has_zh(v): zh_strings.add(v)
-                      collect_json_zh(zh_data)
-                      json_pairs.append((en_path, zh_data, en_data))
+          # Scan target files (Based on FilePathLineswithChinese.txt logic)
+          TARGET_EXTS = ('.ts', '.tsx', '.js', '.jsx', '.json')
+          IGNORE_DIRS = {'node_modules', 'dist', '__tests__', 'assets'}
 
-          # 2. Scan TS/TSX Source Files
-          for root, dirs, files in os.walk("app"):
-              dirs[:] = [d for d in dirs if d not in {'node_modules', 'dist', 'locales', '__tests__'}]
+          for root, dirs, files in os.walk("."):
+              dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
               for file in files:
-                  if file.endswith(('.ts', '.tsx', '.js', '.jsx')) and not file.endswith('.d.ts'):
+                  if "Test" in file or "test" in file: continue
+                  if file.endswith(TARGET_EXTS) and not file.endswith('.d.ts'):
                       p = os.path.join(root, file)
                       try:
                           with open(p, 'r', encoding='utf-8') as f: c = f.read()
-                          if has_zh(c):
-                              source_files.append((p, c))
-                              is_tsx = file.endswith('.tsx')
-                              for m in TOKEN_RE.finditer(c):
-                                  comment, special, dq, sq, jsx = m.groups()
-                                  if comment: continue
-                                  tok = special or dq or sq
-                                  if tok and has_zh(tok):
-                                      inner = tok[1:-1]
-                                      if inner.strip() not in IGNORE_STRINGS: zh_strings.add(inner)
-                                  elif is_tsx and jsx and has_zh(jsx):
-                                      inner = jsx[1:-1].strip()
-                                      if inner and inner not in IGNORE_STRINGS: zh_strings.add(inner)
+                          if not has_zh(c): continue
+                          source_files.append((p, c))
+                          
+                          is_tsx_or_json = file.endswith('.tsx') or file.endswith('.json')
+                          for m in TOKEN_RE.finditer(c):
+                              comment, special, dq, sq, jsx = m.groups()
+                              if comment: continue
+                              tok = special or dq or sq
+                              if tok and has_zh(tok):
+                                  inner = tok[1:-1]
+                                  if inner.strip() not in IGNORE_STRINGS:
+                                      zh_strings.add(inner)
+                                      total_zh_chars += count_zh_chars(inner)
+                              elif is_tsx_or_json and jsx and has_zh(jsx):
+                                  inner = jsx[1:-1].strip()
+                                  if inner and inner not in IGNORE_STRINGS:
+                                      zh_strings.add(inner)
+                                      total_zh_chars += count_zh_chars(inner)
                       except: pass
 
           uncached = [s for s in zh_strings if s not in cache or has_zh(cache.get(s, ""))]
-          print(f"Total Strings: {len(zh_strings)} | Uncached: {len(uncached)}")
+          print(f"Total Unique Strings: {len(zh_strings)} | Total Chinese Characters: {total_zh_chars} | Uncached Strings: {len(uncached)}")
 
           # Translation Loop
           limit_reached, failures = False, 0
@@ -216,26 +203,6 @@ jobs:
           # ACTIVE OVERRIDE: Replace Source Files Immediately!
           # =========================================================
           
-          # Override JSON Locales
-          def apply_json_zh(z_obj, e_obj):
-              changed = False
-              if not isinstance(z_obj, dict): return False
-              for k, v in z_obj.items():
-                  if isinstance(v, dict):
-                      if k not in e_obj or not isinstance(e_obj[k], dict): e_obj[k] = {}; changed = True
-                      if apply_json_zh(v, e_obj[k]): changed = True
-                  elif isinstance(v, str) and has_zh(v):
-                      if v in cache and not has_zh(cache[v]) and e_obj.get(k) != cache[v]:
-                          e_obj[k] = cache[v]
-                          changed = True
-              return changed
-
-          for en_path, zh_data, en_data in json_pairs:
-              if apply_json_zh(zh_data, en_data):
-                  with open(en_path, 'w', encoding='utf-8') as f:
-                      json.dump(en_data, f, ensure_ascii=False, indent=2)
-
-          # Override TS/TSX Files
           def sanitize_for_quote(text, quote_char):
               text = text.replace('\r', ' ').replace('\n', ' ')
               if quote_char == "'": text = text.replace("\\'", "'").replace("'", "\\'")
@@ -267,7 +234,9 @@ jobs:
                   
                   nc = TOKEN_RE.sub(repl, c)
                   if nc != c:
+                      # FilePathLineswithChinese.txt ရှိ ဖိုင်များမှန်ကန်မှုစစ်ဆေးရန်
                       with open(p, 'w', encoding='utf-8') as f: f.write(nc)
+                      print(f"Overridden: {p}")
               except: pass
 
           remaining = [s for s in zh_strings if s not in cache or has_zh(cache.get(s, ""))]
@@ -296,7 +265,7 @@ jobs:
             return list;
           }
           
-          const files = walk("app");
+          const files = walk(".");
           for (const f of files) {
             try {
               const content = fs.readFileSync(f, "utf8");
@@ -310,11 +279,10 @@ jobs:
           }
           EOF
 
-      - name: "7. Commit Progress to Source Code"
+      - name: "7. Commit Source Code Progress & Trigger Release"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # ဤနေရာတွင် Cache သာမက Override လုပ်ထားသော .ts, .tsx, .json ဖိုင်များကိုပါ Repo ထဲသို့ Commit လုပ်ပါမည်
           git add -A
           if ! git diff --cached --quiet; then
             if [ "${{ steps.translate.outputs.is_complete }}" == "true" ]; then
@@ -325,7 +293,6 @@ jobs:
             git push origin HEAD:refs/heads/${{ env.TARGET_BRANCH }} --force
           fi
 
-          # 100% ပြီးမှသာ Release ကို အလိုအလျောက် ထုတ်ပါမည်
           if [ "${{ steps.translate.outputs.is_complete }}" == "true" ] || [ "${{ inputs.force_release }}" == "true" ]; then
             VERSION="$(jq -r .version package.json 2>/dev/null || echo '1.4.9')"
             EN_TAG="v${VERSION}-$(date +'%Y%m%d')-en"
