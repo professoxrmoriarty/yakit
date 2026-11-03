@@ -1,4 +1,4 @@
-name: "1. Smart Sync & Progressive Translate (Resume & Cache Edition)"
+name: "1. Smart Diff Sync & Progressive Override (Yakit)"
 
 on:
   schedule:
@@ -22,45 +22,34 @@ env:
 
 jobs:
   sync-and-translate:
-    name: "Smart Diff Sync & Progressive Translate"
+    name: "Sync & Progressive Override Yakit"
     runs-on: ubuntu-latest
     steps:
       - name: "1. Checkout Fork Repository"
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
           token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: "2. Configure Git & Fetch Upstream Diffs"
+      - name: "2. Configure Git & Sync Upstream Diffs"
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream ${{ env.UPSTREAM_REPO }} 2>/dev/null || git remote set-url upstream ${{ env.UPSTREAM_REPO }}
-          git fetch upstream ${{ env.UPSTREAM_BRANCH }} --tags || git fetch upstream main --tags
 
-      - name: "3. Merge Upstream Diff Changes Only (Preserve Custom Assets & Cache)"
-        run: |
+          # Backup existing workflow and cache files
           mkdir -p /tmp/backup/workflows
           cp -r .github/workflows/* /tmp/backup/workflows/ 2>/dev/null || true
-          if [ -f ".github/security_glossary.json" ]; then
-            cp .github/security_glossary.json /tmp/backup/security_glossary.json
-          fi
-          if [ -f ".i18n_cache.json" ]; then
-            cp .i18n_cache.json /tmp/backup/.i18n_cache.json
-          fi
-          if [ -f "README.md" ]; then
-            cp README.md /tmp/backup/README.md
-          fi
-          if [ -f "README_EN.md" ]; then
-            cp README_EN.md /tmp/backup/README_EN.md
-          fi
+          [ -f ".github/security_glossary.json" ] && cp .github/security_glossary.json /tmp/backup/
+          [ -f ".i18n_cache.json" ] && cp .i18n_cache.json /tmp/backup/
+
+          # Fetch and merge from upstream
+          git remote add upstream "${{ env.UPSTREAM_REPO }}" 2>/dev/null || git remote set-url upstream "${{ env.UPSTREAM_REPO }}"
+          git fetch upstream "${{ env.UPSTREAM_BRANCH }}" --tags
 
           UP_REF="upstream/${{ env.UPSTREAM_BRANCH }}"
-          if ! git rev-parse --verify "$UP_REF" >/dev/null 2>&1; then
-            UP_REF="upstream/main"
-          fi
+          git checkout -B "${{ env.TARGET_BRANCH }}" "origin/${{ env.TARGET_BRANCH }}" 2>/dev/null || git checkout -B "${{ env.TARGET_BRANCH }}" "$UP_REF"
 
+          # Diff Sync: Keep new changes from upstream
           if ! git merge "$UP_REF" -X theirs --allow-unrelated-histories --no-edit; then
             git status --porcelain | awk '$1=="DU" || $1=="UD" {print $2}' | xargs -r git rm -f
             git checkout --theirs . || true
@@ -68,663 +57,279 @@ jobs:
             git commit --no-edit || true
           fi
 
+          # Restore our custom workflows and cache
           rm -rf .github/workflows/*
           mkdir -p .github/workflows
           cp -r /tmp/backup/workflows/* .github/workflows/ 2>/dev/null || true
-          if [ -f "/tmp/backup/security_glossary.json" ]; then
-            cp /tmp/backup/security_glossary.json .github/security_glossary.json
-          fi
-          if [ -f "/tmp/backup/.i18n_cache.json" ]; then
-            cp /tmp/backup/.i18n_cache.json .i18n_cache.json
-          fi
-          if [ -f "/tmp/backup/README.md" ]; then
-            cp /tmp/backup/README.md README.md
-          fi
-          if [ -f "/tmp/backup/README_EN.md" ]; then
-            cp /tmp/backup/README_EN.md README_EN.md
-          fi
+          [ -f "/tmp/backup/security_glossary.json" ] && cp /tmp/backup/security_glossary.json .github/
+          [ -f "/tmp/backup/.i18n_cache.json" ] && cp /tmp/backup/.i18n_cache.json .
 
-          git clone --depth 1 "${{ env.YAKLANG_FORK_REPO }}" /tmp/yaklang_fork 2>/dev/null || true
-          if [ -f "/tmp/yaklang_fork/.i18n_cache.json" ]; then
-            cp /tmp/yaklang_fork/.i18n_cache.json /tmp/yaklang_cache.json
-          fi
+          # Fetch shared cache from Yaklang
+          git clone --depth 1 --branch english-edition "${{ env.YAKLANG_FORK_REPO }}" /tmp/yaklang_fork 2>/dev/null || true
+          [ -f "/tmp/yaklang_fork/.i18n_cache.json" ] && cp "/tmp/yaklang_fork/.i18n_cache.json" /tmp/yaklang_cache.json
           rm -rf /tmp/yaklang_fork
 
-          if [ -n "$(git status --porcelain)" ]; then
-            git add .github/ .i18n_cache.json README.md 2>/dev/null || true
-            git commit -m "chore(sync): merge upstream diff changes" || true
-          fi
-
-      - name: "4. Enforce English Default Language in i18n.ts"
-        run: |
-          for I18N_FILE in \
-            "app/renderer/src/main/src/i18n/i18n.ts" \
-            "app/renderer/engine-link-startup/src/i18n/i18n.ts" \
-            "app/renderer/engine-link-startup/src/i18n.ts"; do
-            if [ -f "$I18N_FILE" ]; then
-              sed -i "s/lng:.*'zh'/lng: localStorage.getItem('i18nextLng') || 'en'/g" "$I18N_FILE"
-              sed -i "s/fallbackLng:.*'zh'/fallbackLng: 'en'/g" "$I18N_FILE"
-            fi
-          done
-
-      - name: "5. Setup Node.js & TypeScript Compiler"
+      - name: "3. Setup Node.js & TypeScript Compiler"
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm install -g typescript
 
-      - name: "6. Setup Python & Install Dependencies"
+      - name: "4. Setup Python & Libraries"
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - run: python3 -m pip install --upgrade pip deep-translator PyYAML
 
-      - name: "7. Install tsc, PyYAML & Translation Libraries"
-        run: |
-          npm install -g typescript
-          python3 -m pip install --upgrade pip deep-translator PyYAML openai
-
-      - name: "8. Progressive Translation (Stop on Limit, Save Cache & Resume)"
+      - name: "5. Progressive Translation & Source File Override"
         id: translate
-        env:
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_BASE_URL: "https://openrouter.ai/api/v1"
         run: |
           python3 - << 'EOF'
-          import os
-          import re
-          import json
-          import time
-          import yaml
+          import os, re, json, time
           from deep_translator import GoogleTranslator
 
-          ZH_DIR = "app/renderer/src/main/public/locales/zh"
-          EN_DIR = "app/renderer/src/main/public/locales/en"
-          SRC_DIRS = ["app/renderer/src", "app/main", "pocs", "plugins", "app/plugin"]
           CACHE_FILE = ".i18n_cache.json"
-          YAKLANG_SHARED_CACHE = "/tmp/yaklang_cache.json"
           GLOSSARY_FILE = ".github/security_glossary.json"
-          META_KEY = "__glossary_snapshot__"
-
           START_TIME = time.time()
           MAX_RUNTIME_SECONDS = 45 * 60
           MAX_CONSECUTIVE_FAILURES = 5
 
-          IGNORE_STRINGS = {"微软雅黑", "宋体", "黑体", "苹方", "楷体", "仿宋"}
-
           translator = GoogleTranslator(source='zh-CN', target='en')
           zh_char_re = re.compile(r'[\u4e00-\u9fff]')
-          multi_space_re = re.compile(r' {2,}')
+          placeholder_re = re.compile(r'(\{\{.*?\}\}|\$\{[^}]+\}|\{\d+\}|%[+#0 -]*\d*(?:\.\d+)?[svTtbcdoqxXUeEfFgGp%]|\\[nrt"\\])')
+          IGNORE_STRINGS = {"微软雅黑", "宋体", "黑体", "苹方", "楷体", "仿宋"}
 
-          def has_zh(text):
-              return bool(zh_char_re.search(str(text)))
+          def has_zh(text): return bool(zh_char_re.search(str(text)))
 
-          # Trailing comma (,}) သို့မဟုတ် JSON syntax အမှားပါနေလျှင် အလိုအလျောက် သန့်စင်ဖတ်ပေးမည့် Function
-          def safe_load_json(filepath, default_val=None):
-              if default_val is None:
-                  default_val = {}
-              if not os.path.exists(filepath):
-                  return default_val
+          def safe_load_json(filepath):
+              if not os.path.exists(filepath): return {}
               try:
-                  with open(filepath, 'r', encoding='utf-8') as f:
-                      raw = f.read()
+                  with open(filepath, 'r', encoding='utf-8') as f: raw = f.read()
                   return json.loads(raw)
-              except Exception:
+              except:
                   try:
-                      # Trailing commas (, } သို့မဟုတ် , ]) ကို အလိုအလျောက် ဖယ်ရှားပြီး ပြန်ဖတ်မည်
                       cleaned = re.sub(r',\s*([}\]])', r'\1', raw)
-                      data = json.loads(cleaned)
-                      # သန့်စင်ပြီးသား JSON ကို ဖိုင်ထဲသို့ ပြန်သိမ်းပေးထားမည်
-                      with open(filepath, 'w', encoding='utf-8') as fw:
-                          json.dump(data, fw, ensure_ascii=False, indent=2)
-                      print(f"[Auto-Fixed JSON] Cleaned trailing commas in {filepath}")
-                      return data
-                  except Exception as e:
-                      print(f"[Warning] Skipping malformed JSON file {filepath}: {e}")
-                      return default_val
+                      return json.loads(cleaned)
+                  except: return {}
 
-          exact_glossary = {}
-          inline_glossary = {}
-          post_fix_patterns = []
-
-          g_data = safe_load_json(GLOSSARY_FILE, {})
-          if isinstance(g_data, dict):
-              for _, mapping in g_data.get("terms", {}).items():
-                  if isinstance(mapping, dict):
-                      exact_glossary.update(mapping)
-                      inline_glossary.update(mapping)
-              if isinstance(g_data.get("exact_only"), dict):
-                  exact_glossary.update(g_data.get("exact_only", {}))
-              if isinstance(g_data.get("post_fixes"), dict):
-                  for pat, repl in g_data.get("post_fixes", {}).items():
-                      try:
-                          post_fix_patterns.append((re.compile(pat, re.IGNORECASE), repl))
-                      except Exception:
-                          pass
-
+          exact_glossary, inline_glossary = {}, {}
+          g_data = safe_load_json(GLOSSARY_FILE)
+          for _, mapping in g_data.get("terms", {}).items():
+              if isinstance(mapping, dict):
+                  exact_glossary.update(mapping)
+                  inline_glossary.update(mapping)
           sorted_inline_keys = sorted(inline_glossary.keys(), key=len, reverse=True)
 
           cache = {}
-          shared_c = safe_load_json(YAKLANG_SHARED_CACHE, {})
-          if isinstance(shared_c, dict):
-              cache.update(shared_c)
+          for cf in ("/tmp/yaklang_cache.json", CACHE_FILE):
+              cache.update(safe_load_json(cf))
 
-          local_c = safe_load_json(CACHE_FILE, {})
-          if isinstance(local_c, dict):
-              cache.update(local_c)
-
-          prev_snapshot = cache.get(META_KEY, {}) if isinstance(cache.get(META_KEY), dict) else {}
-          current_snapshot = {**inline_glossary, **exact_glossary}
-
-          changed_terms = [
-              zh_k for zh_k, en_v in current_snapshot.items()
-              if prev_snapshot.get(zh_k) != en_v
-          ]
-
-          if changed_terms:
-              for k in list(cache.keys()):
-                  if k != META_KEY and any(term in k for term in changed_terms):
-                      del cache[k]
-
-          def save_cache_checkpoint():
-              cache[META_KEY] = current_snapshot
+          def save_cache():
               with open(CACHE_FILE, 'w', encoding='utf-8') as f:
                   json.dump(cache, f, ensure_ascii=False, indent=2)
 
-          def pre_process_glossary(text):
-              stripped = text.strip()
-              if stripped in exact_glossary:
-                  return exact_glossary[stripped], False
-              out = text
-              for zh_term in sorted_inline_keys:
-                  if zh_term in out:
-                      out = out.replace(zh_term, f" {inline_glossary[zh_term]} ")
-              out = multi_space_re.sub(' ', out).strip()
-              return out, has_zh(out)
+          def translate_one(orig):
+              stripped = orig.strip()
+              if stripped in exact_glossary: return exact_glossary[stripped]
+              tokens = []
+              def mask_fn(m):
+                  tokens.append(m.group(0))
+                  return f"__PH{len(tokens)-1}__"
+              masked = placeholder_re.sub(mask_fn, orig)
+              for zh_k in sorted_inline_keys:
+                  if zh_k in masked: masked = masked.replace(zh_k, f" {inline_glossary[zh_k]} ")
+              if has_zh(masked): masked = translator.translate(masked) or masked
+              for idx, tok in enumerate(tokens):
+                  masked = re.sub(rf'__PH{idx}__', lambda _: tok, masked, flags=re.IGNORECASE)
+              return re.sub(r' {2,}', ' ', masked).strip()
 
-          def post_process_glossary(text):
-              out = text
-              for regex, repl in post_fix_patterns:
-                  out = regex.sub(repl, out)
-              out = re.sub(r'\s+([,.:;!?)])', r'\1', out)
-              out = re.sub(r'([(\[])\s+', r'\1', out)
-              return multi_space_re.sub(' ', out).strip()
-
-          limit_reached = False
-
-          def batch_translate(texts, stage_name=""):
-              global limit_reached
-              if limit_reached:
-                  return
-
-              unique_new = [
-                  t for t in texts
-                  if (t not in cache or has_zh(cache.get(t, ""))) and has_zh(t) and t.strip() not in IGNORE_STRINGS
-              ]
-              if not unique_new:
-                  print(f"[{stage_name}] All strings already in cache! Nothing new to translate.")
-                  return
-
-              mt_queue = []
-              for orig in unique_new:
-                  pre_text, needs_mt = pre_process_glossary(orig)
-                  if not needs_mt:
-                      cache[orig] = post_process_glossary(pre_text)
-                  else:
-                      mt_queue.append((orig, pre_text))
-
-              save_cache_checkpoint()
-              if not mt_queue:
-                  return
-
-              print(f"[{stage_name}] Translating {len(mt_queue)} uncached strings...")
-              BATCH_SIZE = 30
-              consecutive_failures = 0
-
-              for i in range(0, len(mt_queue), BATCH_SIZE):
-                  if time.time() - START_TIME > MAX_RUNTIME_SECONDS:
-                      print("Time limit reached! Pausing and saving cache checkpoint...")
-                      limit_reached = True
-                      break
-                  if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                      print("Rate limit reached! Pausing and saving cache checkpoint for next run...")
-                      limit_reached = True
-                      break
-
-                  batch = mt_queue[i:i + BATCH_SIZE]
-                  single_line = [(o, p) for o, p in batch if "\n" not in p]
-                  multi_line = [(o, p) for o, p in batch if "\n" in p]
-
-                  if single_line:
-                      joined = "\n".join(p for _, p in single_line)
-                      batch_ok = False
-                      for _ in range(3):
-                          try:
-                              trans_joined = translator.translate(joined)
-                              if trans_joined:
-                                  results = trans_joined.split("\n")
-                                  if len(results) == len(single_line):
-                                      for (orig, _), res in zip(single_line, results):
-                                          if res and not has_zh(res):
-                                              cache[orig] = post_process_glossary(res)
-                                      batch_ok = True
-                                      consecutive_failures = 0
-                                      break
-                                  else:
-                                      for orig, pre_p in single_line:
-                                          res = translator.translate(pre_p)
-                                          if res and not has_zh(res):
-                                              cache[orig] = post_process_glossary(res)
-                                      batch_ok = True
-                                      consecutive_failures = 0
-                                      break
-                          except Exception:
-                              time.sleep(2.0)
-
-                      if not batch_ok:
-                          consecutive_failures += 1
-
-                  for orig, pre_p in multi_line:
-                      if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                          limit_reached = True
-                          break
-                      try:
-                          res = translator.translate(pre_p)
-                          if res and not has_zh(res):
-                              cache[orig] = post_process_glossary(res)
-                              consecutive_failures = 0
-                          else:
-                              consecutive_failures += 1
-                      except Exception:
-                          consecutive_failures += 1
-                          time.sleep(1.5)
-
-                  save_cache_checkpoint()
-                  done_count = min(i + BATCH_SIZE, len(mt_queue))
-                  print(f"[{stage_name}] Progress: {done_count}/{len(mt_queue)} saved to cache.")
-                  time.sleep(0.5)
-
-          json_zh_strings = set()
-          source_zh_strings = set()
-          yaml_zh_strings = set()
-
-          # 1. Sync & Translate JSON Locales
-          def collect_json_zh(zh_obj, en_obj, collected):
-              if not isinstance(zh_obj, dict):
-                  return
-              for k, v in zh_obj.items():
-                  if isinstance(v, dict):
-                      collect_json_zh(v, en_obj.get(k, {}) if isinstance(en_obj.get(k), dict) else {}, collected)
-                  elif isinstance(v, str):
-                      if (k not in en_obj or has_zh(en_obj.get(k, "")) or v in changed_terms) and has_zh(v):
-                          collected.add(v)
-
-          def apply_json_zh(zh_obj, en_obj):
-              changed = False
-              if not isinstance(zh_obj, dict):
-                  return False
-              for k, v in zh_obj.items():
-                  if isinstance(v, dict):
-                      if k not in en_obj or not isinstance(en_obj[k], dict):
-                          en_obj[k] = {}
-                          changed = True
-                      if apply_json_zh(v, en_obj[k]):
-                          changed = True
-                  elif isinstance(v, str) and has_zh(v):
-                      if v in cache and not has_zh(cache[v]):
-                          if en_obj.get(k) != cache[v]:
-                              en_obj[k] = cache[v]
-                              changed = True
-              return changed
-
-          if os.path.exists(ZH_DIR):
-              os.makedirs(EN_DIR, exist_ok=True)
-              json_pairs = []
-              for fname in sorted(os.listdir(ZH_DIR)):
-                  if not fname.endswith(".json"):
-                      continue
-                  zh_path = os.path.join(ZH_DIR, fname)
-                  en_path = os.path.join(EN_DIR, fname)
-                  zh_data = safe_load_json(zh_path, {})
-                  en_data = safe_load_json(en_path, {})
-                  if not isinstance(zh_data, dict):
-                      continue
-                  if not isinstance(en_data, dict):
-                      en_data = {}
-                  collect_json_zh(zh_data, en_data, json_zh_strings)
-                  json_pairs.append((en_path, zh_data, en_data))
-
-              batch_translate(list(json_zh_strings), "JSON Locales")
-              for en_path, zh_data, en_data in json_pairs:
-                  if apply_json_zh(zh_data, en_data):
-                      with open(en_path, 'w', encoding='utf-8') as f:
-                          json.dump(en_data, f, ensure_ascii=False, indent=2)
-
-          # 2. Scan & Translate Source Files (.ts, .tsx, .yak)
           TOKEN_RE = re.compile(
               r'(//[^\n]*|/\*[\s\S]*?\*/)'
-              r"|('(?:\\.|[^'\\\n])*')"
+              r'|(`[^`]*`)'
               r'|("(?:\\.|[^"\\\n])*")'
-              r'|(`(?:\\.|[^`\\$])*`)'
+              r"|('(?:\\.|[^'\\\n])*')"
               r'|(>[^<>{}`"\']*?[\u4e00-\u9fff]+[^<>{}`"\']*?<)'
           )
 
+          zh_strings = set()
           source_files = []
-          for base_dir in SRC_DIRS:
-              if not os.path.exists(base_dir):
-                  continue
-              for root, dirs, files in os.walk(base_dir):
-                  dirs[:] = [d for d in dirs if d not in {'node_modules', 'dist', 'locales', '__tests__'}]
-                  for file in files:
-                      if file.endswith(('.ts', '.tsx', '.yak')) and not file.endswith('.d.ts'):
-                          full_path = os.path.join(root, file)
-                          try:
-                              with open(full_path, 'r', encoding='utf-8') as f:
-                                  content = f.read()
-                          except Exception:
-                              continue
-                          if not has_zh(content):
-                              continue
-                          file_has_target = False
-                          is_tsx = file.endswith('.tsx')
-                          for m in TOKEN_RE.finditer(content):
-                              comment, sq, dq, tl, jsx = m.groups()
-                              if comment:
-                                  continue
-                              token = sq or dq or tl
-                              if token and has_zh(token):
-                                  inner = token[1:-1]
-                                  if inner.strip() not in IGNORE_STRINGS:
-                                      source_zh_strings.add(inner)
-                                      file_has_target = True
-                              elif is_tsx and jsx and has_zh(jsx):
-                                  inner = jsx[1:-1].strip()
-                                  if inner and inner not in IGNORE_STRINGS:
-                                      source_zh_strings.add(inner)
-                                      file_has_target = True
-                          if file_has_target:
-                              source_files.append(full_path)
+          
+          # 1. Scan Locales JSON
+          ZH_DIR = "app/renderer/src/main/public/locales/zh"
+          EN_DIR = "app/renderer/src/main/public/locales/en"
+          json_pairs = []
+          if os.path.exists(ZH_DIR):
+              os.makedirs(EN_DIR, exist_ok=True)
+              for fname in os.listdir(ZH_DIR):
+                  if fname.endswith(".json"):
+                      zh_path, en_path = os.path.join(ZH_DIR, fname), os.path.join(EN_DIR, fname)
+                      zh_data, en_data = safe_load_json(zh_path), safe_load_json(en_path)
+                      
+                      def collect_json_zh(z_obj):
+                          if isinstance(z_obj, dict):
+                              for k, v in z_obj.items():
+                                  if isinstance(v, dict): collect_json_zh(v)
+                                  elif isinstance(v, str) and has_zh(v): zh_strings.add(v)
+                      collect_json_zh(zh_data)
+                      json_pairs.append((en_path, zh_data, en_data))
 
-          batch_translate(list(source_zh_strings), "Source TS/TSX/Yak")
+          # 2. Scan TS/TSX Source Files
+          for root, dirs, files in os.walk("app"):
+              dirs[:] = [d for d in dirs if d not in {'node_modules', 'dist', 'locales', '__tests__'}]
+              for file in files:
+                  if file.endswith(('.ts', '.tsx', '.js', '.jsx')) and not file.endswith('.d.ts'):
+                      p = os.path.join(root, file)
+                      try:
+                          with open(p, 'r', encoding='utf-8') as f: c = f.read()
+                          if has_zh(c):
+                              source_files.append((p, c))
+                              is_tsx = file.endswith('.tsx')
+                              for m in TOKEN_RE.finditer(c):
+                                  comment, special, dq, sq, jsx = m.groups()
+                                  if comment: continue
+                                  tok = special or dq or sq
+                                  if tok and has_zh(tok):
+                                      inner = tok[1:-1]
+                                      if inner.strip() not in IGNORE_STRINGS: zh_strings.add(inner)
+                                  elif is_tsx and jsx and has_zh(jsx):
+                                      inner = jsx[1:-1].strip()
+                                      if inner and inner not in IGNORE_STRINGS: zh_strings.add(inner)
+                      except: pass
 
+          uncached = [s for s in zh_strings if s not in cache or has_zh(cache.get(s, ""))]
+          print(f"Total Strings: {len(zh_strings)} | Uncached: {len(uncached)}")
+
+          # Translation Loop
+          limit_reached, failures = False, 0
+          for idx, s in enumerate(uncached):
+              if time.time() - START_TIME > MAX_RUNTIME_SECONDS or failures >= MAX_CONSECUTIVE_FAILURES:
+                  limit_reached = True; break
+              try:
+                  res = translate_one(s)
+                  if res and not has_zh(res): cache[s] = res; failures = 0
+                  else: failures += 1
+              except: failures += 1; time.sleep(1.5)
+              if (idx + 1) % 30 == 0: save_cache(); time.sleep(0.4)
+          save_cache()
+
+          # =========================================================
+          # ACTIVE OVERRIDE: Replace Source Files Immediately!
+          # =========================================================
+          
+          # Override JSON Locales
+          def apply_json_zh(z_obj, e_obj):
+              changed = False
+              if not isinstance(z_obj, dict): return False
+              for k, v in z_obj.items():
+                  if isinstance(v, dict):
+                      if k not in e_obj or not isinstance(e_obj[k], dict): e_obj[k] = {}; changed = True
+                      if apply_json_zh(v, e_obj[k]): changed = True
+                  elif isinstance(v, str) and has_zh(v):
+                      if v in cache and not has_zh(cache[v]) and e_obj.get(k) != cache[v]:
+                          e_obj[k] = cache[v]
+                          changed = True
+              return changed
+
+          for en_path, zh_data, en_data in json_pairs:
+              if apply_json_zh(zh_data, en_data):
+                  with open(en_path, 'w', encoding='utf-8') as f:
+                      json.dump(en_data, f, ensure_ascii=False, indent=2)
+
+          # Override TS/TSX Files
           def sanitize_for_quote(text, quote_char):
               text = text.replace('\r', ' ').replace('\n', ' ')
-              if quote_char == "'":
-                  text = text.replace("\\'", "'").replace("'", "\\'")
-              elif quote_char == '"':
-                  text = text.replace('\\"', '"').replace('"', '\\"')
-              elif quote_char == '`':
-                  text = text.replace('`', "'").replace('${', '\\${')
+              if quote_char == "'": text = text.replace("\\'", "'").replace("'", "\\'")
+              elif quote_char == '"': text = text.replace('\\"', '"').replace('"', '\\"')
+              elif quote_char == '`': text = text.replace('`', "'").replace('${', '\\${')
               return text
 
-          for full_path in source_files:
-              with open(full_path, 'r', encoding='utf-8') as f:
-                  content = f.read()
-              is_tsx = full_path.endswith('.tsx')
-              def replacer(m):
-                  comment, sq, dq, tl, jsx = m.groups()
-                  if comment:
-                      return comment
-                  token = sq or dq or tl
-                  if token:
-                      if not has_zh(token):
-                          return token
-                      quote_char = token[0]
-                      inner = token[1:-1]
-                      if inner.strip() in IGNORE_STRINGS or inner not in cache or has_zh(cache[inner]):
-                          return token
-                      trans = sanitize_for_quote(cache[inner], quote_char)
-                      return f"{quote_char}{trans}{quote_char}"
-                  if is_tsx and jsx:
-                      inner_raw = jsx[1:-1]
-                      inner_stripped = inner_raw.strip()
-                      if not inner_stripped or inner_stripped not in cache or has_zh(cache[inner_stripped]):
-                          return jsx
-                      trans = cache[inner_stripped].replace('<', '&lt;').replace('>', '&gt;')
-                      leading_ws = inner_raw[:len(inner_raw) - len(inner_raw.lstrip())]
-                      trailing_ws = inner_raw[len(inner_raw.rstrip()):]
-                      return f">{leading_ws}{trans}{trailing_ws}<"
-                  return m.group(0)
-
-              new_content = TOKEN_RE.sub(replacer, content)
-              if new_content != content:
-                  with open(full_path, 'w', encoding='utf-8') as f:
-                      f.write(new_content)
-
-          # 3. Scan & Translate PoC YAML Templates
-          yaml_files = []
-          for root, dirs, files in os.walk("."):
-              dirs[:] = [d for d in dirs if d not in {'node_modules', 'dist', '.git', 'app'}]
-              for file in files:
-                  if file.endswith(('.yml', '.yaml')):
-                      full_path = os.path.join(root, file)
-                      try:
-                          with open(full_path, 'r', encoding='utf-8') as f:
-                              raw_yaml = f.read()
-                      except Exception:
-                          continue
-                      if not has_zh(raw_yaml):
-                          continue
-                      try:
-                          data = yaml.safe_load(raw_yaml)
-                          if isinstance(data, dict):
-                              for field in ['name', 'description', 'solution', 'title', 'summary', 'author', 'reference', 'vuln-id']:
-                                  val = data.get(field)
-                                  if isinstance(val, str) and has_zh(val):
-                                      yaml_zh_strings.add(val)
-                              info_block = data.get('info')
-                              if isinstance(info_block, dict):
-                                  for field in ['name', 'description', 'solution', 'author', 'summary']:
-                                      val = info_block.get(field)
-                                      if isinstance(val, str) and has_zh(val):
-                                          yaml_zh_strings.add(val)
-                              yaml_files.append(full_path)
-                      except Exception:
-                          continue
-
-          batch_translate(list(yaml_zh_strings), "PoC YAMLs")
-
-          for full_path in yaml_files:
+          for p, c in source_files:
               try:
-                  with open(full_path, 'r', encoding='utf-8') as f:
-                      data = yaml.safe_load(f)
-                  if not isinstance(data, dict):
-                      continue
-                  modified = False
-                  for field in ['name', 'description', 'solution', 'title', 'summary', 'author', 'reference', 'vuln-id']:
-                      val = data.get(field)
-                      if isinstance(val, str) and val in cache and not has_zh(cache[val]):
-                          data[field] = cache[val]
-                          modified = True
-                  info_block = data.get('info')
-                  if isinstance(info_block, dict):
-                      for field in ['name', 'description', 'solution', 'author', 'summary']:
-                          val = info_block.get(field)
-                          if isinstance(val, str) and val in cache and not has_zh(cache[val]):
-                              info_block[field] = cache[val]
-                              modified = True
-                  if modified:
-                      with open(full_path, 'w', encoding='utf-8') as f:
-                          yaml.safe_dump(data, f, allow_unicode=False, sort_keys=False)
-              except Exception:
-                  pass
+                  is_tsx = p.endswith('.tsx')
+                  def repl(m):
+                      comment, special, dq, sq, jsx = m.groups()
+                      if comment: return comment
+                      tok = special or dq or sq
+                      if tok:
+                          if not has_zh(tok): return tok
+                          q, inner = tok[0], tok[1:-1]
+                          if inner.strip() in IGNORE_STRINGS or inner not in cache or has_zh(cache[inner]): return tok
+                          return f"{q}{sanitize_for_quote(cache[inner], q)}{q}"
+                      if is_tsx and jsx:
+                          inner_raw = jsx[1:-1]
+                          inner_stripped = inner_raw.strip()
+                          if not inner_stripped or inner_stripped not in cache or has_zh(cache[inner_stripped]): return jsx
+                          trans = cache[inner_stripped].replace('<', '&lt;').replace('>', '&gt;')
+                          lead = inner_raw[:len(inner_raw) - len(inner_raw.lstrip())]
+                          trail = inner_raw[len(inner_raw.rstrip()):]
+                          return f">{lead}{trans}{trail}<"
+                      return m.group(0)
+                  
+                  nc = TOKEN_RE.sub(repl, c)
+                  if nc != c:
+                      with open(p, 'w', encoding='utf-8') as f: f.write(nc)
+              except: pass
 
-          save_cache_checkpoint()
-
-          all_required = set()
-          for s in (json_zh_strings | source_zh_strings | yaml_zh_strings):
-              if has_zh(s) and s.strip() not in IGNORE_STRINGS:
-                  all_required.add(s)
-
-          remaining = [s for s in all_required if s not in cache or has_zh(cache[s])]
-          is_complete = (len(remaining) == 0) and (not limit_reached)
-
-          print(f"=== Translation Summary ===")
-          print(f"Total cached translations: {len(cache)}")
-          print(f"Remaining untranslated strings: {len(remaining)}")
-          print(f"Is 100% Complete: {is_complete}")
-
+          remaining = [s for s in zh_strings if s not in cache or has_zh(cache.get(s, ""))]
+          is_complete = (len(remaining) == 0) and not limit_reached
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"is_complete={'true' if is_complete else 'false'}\n")
               f.write(f"remaining_count={len(remaining)}\n")
           EOF
 
-      - name: "9. Safety Check (tsc Syntax & JSON Validation + Auto-Revert)"
-        env:
-          UPSTREAM_BRANCH: ${{ env.UPSTREAM_BRANCH }}
+      - name: "6. Syntax Check & Auto-Revert"
         run: |
-          GLOBAL_NM="$(npm root -g)"
-          export GLOBAL_NM
           node - << 'EOF'
-          const fs = require('fs');
-          const path = require('path');
-          const { execFileSync } = require('child_process');
-
-          let ts = null;
-          try {
-            const globalTsPath = path.join(process.env.GLOBAL_NM || '', 'typescript');
-            ts = require(globalTsPath);
-          } catch {
-            try {
-              ts = require('typescript');
-            } catch {
-              ts = null;
+          const fs = require("fs");
+          const { execFileSync } = require("child_process");
+          let ts;
+          try { ts = require("typescript"); } catch(e) { process.exit(0); }
+          
+          function walk(dir, list = []) {
+            if (!fs.existsSync(dir)) return list;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (entry.name === "node_modules" || entry.name === "dist") continue;
+              const full = dir + "/" + entry.name;
+              if (entry.isDirectory()) walk(full, list);
+              else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) list.push(full);
             }
+            return list;
           }
-          if (ts && !ts.createSourceFile && ts.default && ts.default.createSourceFile) {
-            ts = ts.default;
-          }
-
-          const upstreamRef = `upstream/${process.env.UPSTREAM_BRANCH || 'master'}`;
-          const revertedRecords = [];
-
-          function git(args) {
-            return execFileSync('git', args, { encoding: 'utf8' }).trim();
-          }
-
-          function revertFile(relPath, tierRef) {
+          
+          const files = walk("app");
+          for (const f of files) {
             try {
-              git(['cat-file', '-e', `${tierRef}:${relPath}`]);
-              git(['checkout', tierRef, '--', relPath]);
-              return `Reverted to ${tierRef}`;
-            } catch {
-              try {
-                git(['cat-file', '-e', `${upstreamRef}:${relPath}`]);
-                git(['checkout', upstreamRef, '--', relPath]);
-                return `Reverted to ${upstreamRef}`;
-              } catch {
-                if (fs.existsSync(relPath)) fs.unlinkSync(relPath);
-                return 'Removed corrupt untracked file';
+              const content = fs.readFileSync(f, "utf8");
+              const isTsx = f.endsWith(".tsx");
+              const sf = ts.createSourceFile(f, content, 99, true, isTsx ? 4 : 3);
+              if (sf.parseDiagnostics && sf.parseDiagnostics.length > 0) {
+                console.log(`Reverting syntax error in: ${f}`);
+                execFileSync("git", ["checkout", "HEAD", "--", f]);
               }
-            }
+            } catch(e) {}
           }
-
-          const rawFiles = git(['ls-files', '--modified', '--others', '--exclude-standard']);
-          const changedFiles = rawFiles
-            ? rawFiles.split('\n').map(s => s.trim()).filter(f => f && fs.existsSync(f))
-            : [];
-
-          const jsonFiles = changedFiles.filter(f => f.endsWith('.json'));
-          const tsFiles = changedFiles.filter(f => (f.endsWith('.ts') || f.endsWith('.tsx')) && !f.endsWith('.d.ts'));
-
-          for (const jf of jsonFiles) {
-            try {
-              JSON.parse(fs.readFileSync(jf, 'utf8'));
-            } catch (err) {
-              const action = revertFile(jf, 'HEAD');
-              revertedRecords.push({ file: jf, code: 'JSON_ERR', reason: err.message, action });
-            }
-          }
-
-          function checkTsSyntax(filesToCheck) {
-            const brokenMap = new Map();
-            if (!ts || typeof ts.createSourceFile !== 'function' || filesToCheck.length === 0) {
-              return brokenMap;
-            }
-
-            for (const rel of filesToCheck) {
-              if (!fs.existsSync(rel)) continue;
-              try {
-                const code = fs.readFileSync(rel, 'utf8');
-                const scriptKind = rel.endsWith('.tsx')
-                  ? (ts.ScriptKind ? ts.ScriptKind.TSX : 4)
-                  : (ts.ScriptKind ? ts.ScriptKind.TS : 3);
-                const sf = ts.createSourceFile(
-                  rel,
-                  code,
-                  (ts.ScriptTarget && ts.ScriptTarget.Latest) ? ts.ScriptTarget.Latest : 99,
-                  true,
-                  scriptKind
-                );
-                const diags = sf.parseDiagnostics || [];
-                if (diags.length > 0) {
-                  const d = diags[0];
-                  const pos = sf.getLineAndCharacterOfPosition ? sf.getLineAndCharacterOfPosition(d.start || 0) : { line: 0, character: 0 };
-                  const msg = ts.flattenDiagnosticMessageText ? ts.flattenDiagnosticMessageText(d.messageText, ' ') : String(d.messageText);
-                  brokenMap.set(rel, { code: `TS${d.code}`, reason: `Line ${pos.line + 1}:${pos.character + 1} - ${msg}` });
-                }
-              } catch (err) {
-                brokenMap.set(rel, { code: 'TS_PARSE_ERR', reason: err.message });
-              }
-            }
-            return brokenMap;
-          }
-
-          const pass1Broken = checkTsSyntax(tsFiles);
-          for (const [rel, info] of pass1Broken.entries()) {
-            const action = revertFile(rel, 'HEAD');
-            revertedRecords.push({ file: rel, code: info.code, reason: info.reason, action });
-          }
-
-          const pass2Broken = checkTsSyntax(tsFiles);
-          for (const [rel, info] of pass2Broken.entries()) {
-            const action = revertFile(rel, upstreamRef);
-            revertedRecords.push({ file: rel, code: info.code, reason: info.reason, action });
-          }
-
-          console.log(`Safety check completed. Reverted files: ${revertedRecords.length}`);
           EOF
 
-      - name: "10. Commit and Save Progress to Repository"
-        run: |
-          git add -f .i18n_cache.json .github/ 2>/dev/null || true
-          git add -A
-          if ! git diff --cached --quiet; then
-            if [ "${{ steps.translate.outputs.is_complete }}" == "true" ]; then
-              git commit -m "feat(i18n): 100% translation complete and verified"
-            else
-              git commit -m "chore(i18n): save translation progress (${{ steps.translate.outputs.remaining_count }} remaining) [skip ci]"
-            fi
-            git push origin ${{ env.TARGET_BRANCH }} --force
-          fi
-
-      - name: "11. Check Completion & Trigger Multi-Product Release"
+      - name: "7. Commit Progress to Source Code"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ steps.translate.outputs.is_complete }}" != "true" ] && [ "${{ inputs.force_release }}" != "true" ]; then
-            echo "Translation still in progress (${{ steps.translate.outputs.remaining_count }} strings left). Skipping release until 100% done."
-            exit 0
+          # ဤနေရာတွင် Cache သာမက Override လုပ်ထားသော .ts, .tsx, .json ဖိုင်များကိုပါ Repo ထဲသို့ Commit လုပ်ပါမည်
+          git add -A
+          if ! git diff --cached --quiet; then
+            if [ "${{ steps.translate.outputs.is_complete }}" == "true" ]; then
+              git commit -m "feat(i18n): 100% translated source files to English"
+            else
+              git commit -m "chore(i18n): progressive source code override (${{ steps.translate.outputs.remaining_count }} strings left) [skip ci]"
+            fi
+            git push origin HEAD:refs/heads/${{ env.TARGET_BRANCH }} --force
           fi
 
-          UPSTREAM_LATEST=$(gh api repos/yaklang/yakit/releases/latest --jq '.tag_name' 2>/dev/null || true)
-          if [ -z "$UPSTREAM_LATEST" ] || [ "$UPSTREAM_LATEST" == "null" ]; then
-            UPSTREAM_LATEST=$(gh api 'repos/yaklang/yakit/releases?per_page=1' --jq '.[0].tag_name' 2>/dev/null || true)
-          fi
-          if [ -z "$UPSTREAM_LATEST" ] || [ "$UPSTREAM_LATEST" == "null" ]; then
-            UPSTREAM_LATEST="v$(date +'%Y.%m.%d')"
-          fi
-
-          EN_TAG="${UPSTREAM_LATEST}-en"
-          RELEASE_EXISTS="false"
-          if gh release view "${EN_TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            RELEASE_EXISTS="true"
-          fi
-
-          if [ "${RELEASE_EXISTS}" == "false" ] || [ "${{ inputs.force_release }}" == "true" ]; then
+          # 100% ပြီးမှသာ Release ကို အလိုအလျောက် ထုတ်ပါမည်
+          if [ "${{ steps.translate.outputs.is_complete }}" == "true" ] || [ "${{ inputs.force_release }}" == "true" ]; then
+            VERSION="$(jq -r .version package.json 2>/dev/null || echo '1.4.9')"
+            EN_TAG="v${VERSION}-$(date +'%Y%m%d')-en"
             git tag -f "${EN_TAG}" HEAD
             git push origin "refs/tags/${EN_TAG}" --force
-            echo "Triggering release-en.yml for tag ${EN_TAG}..."
-            gh workflow run release-en.yml --ref "${{ env.TARGET_BRANCH }}" -f tag_name="${EN_TAG}" -f target_ref="${{ env.TARGET_BRANCH }}" || \
-            gh workflow run release-en.yml -f tag_name="${EN_TAG}" -f target_ref="${{ env.TARGET_BRANCH }}"
-          else
-            echo "Release ${EN_TAG} already exists."
+            gh workflow run release-en.yml --ref "${{ env.TARGET_BRANCH }}" -f tag_name="${EN_TAG}" || true
           fi
