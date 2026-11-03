@@ -62,19 +62,19 @@ export const ConvertAuditStaticAnalyzeErrorToMarker = (i: SSARisk): IMonacoEdito
     const title = SeverityMapTag.filter((item) => item.key.includes(i.Severity || ''))[0]
     let Severity = ''
     switch (title.name) {
-      case '信息':
+      case 'Info':
         Severity = 'Hint'
         break
-      case '低危':
+      case 'Low':
         Severity = 'Info'
         break
-      case '中危':
+      case 'Medium':
         Severity = 'Warning'
         break
-      case '高危':
+      case 'High':
         Severity = 'Error'
         break
-      case '严重':
+      case 'Critical':
         Severity = 'Error'
         break
     }

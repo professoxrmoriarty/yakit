@@ -232,7 +232,7 @@ export const MisstatementRiskDetails = <T extends API.RiskFeedBackData>(props: M
                 <Descriptions.Item label="类型">
                   {(info?.riskTypeVerbose || info.riskType).replaceAll('NUCLEI-', '')}
                 </Descriptions.Item>
-                <Descriptions.Item label="来源">{info?.fromYakScript || '漏洞检测'}</Descriptions.Item>
+                <Descriptions.Item label="来源">{info?.fromYakScript || 'Vulnerability Detection'}</Descriptions.Item>
                 <Descriptions.Item label="反连Token" contentStyle={{ minWidth: 120 }}>
                   {info?.reverseToken || '-'}
                 </Descriptions.Item>
@@ -332,19 +332,19 @@ export const MisstatementAuditRiskDetails = <T extends API.SSARiskResponseData>(
     const severity = SeverityMapTag.filter((item) => item.key.includes(info.severity || ''))[0]
     let icon = <></>
     switch (severity?.name) {
-      case '信息':
+      case 'Info':
         icon = <FingerprintInfoRiskColorful />
         break
-      case '低危':
+      case 'Low':
         icon = <LowRiskColorful />
         break
-      case '中危':
+      case 'Medium':
         icon = <MediumRiskColorful />
         break
-      case '高危':
+      case 'High':
         icon = <HighRiskColorful />
         break
-      case '严重':
+      case 'Critical':
         icon = <CriticalRiskColorful />
         break
       default:

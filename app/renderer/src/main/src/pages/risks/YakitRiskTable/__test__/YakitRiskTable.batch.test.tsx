@@ -344,7 +344,7 @@ const openStatefulRiskBatch = async (selection: 'all' | 'explicit', targetIds: n
           Hash: `risk-${id}`,
           IP: '127.0.0.1',
           Title: `risk ${id}`,
-          RiskType: 'SQL注入',
+          RiskType: 'SQL Injection',
           CreatedAt: id,
         })
       })
@@ -522,7 +522,7 @@ describe('YakitRiskTable 批量操作', () => {
     expect(modalConfig).toEqual(expect.objectContaining({ closable: false, keyboard: false, maskClosable: false }))
     expect(formProps.batchScope.total).toBe(2)
     await formProps.batchScope.execute(
-      { RiskType: 'SQL注入', SeverityScore: 8.8, Tags: '确认' },
+      { RiskType: 'SQL Injection', SeverityScore: 8.8, Tags: '确认' },
       { index: 0, page: 1, limit: 1000, start: 1, end: 2, count: 2 },
     )
 
@@ -533,7 +533,7 @@ describe('YakitRiskTable 批量操作', () => {
       expect.objectContaining({
         Search: 'needle',
         Network: '10.0.0.0/8',
-        RiskType: 'SQL注入',
+        RiskType: 'SQL Injection',
         Ids: [11, 22],
         FromId: 0,
         UntilId: 0,
@@ -654,7 +654,7 @@ describe('YakitRiskTable 批量操作', () => {
     const formProps = openBatchEdit()
     await expect(
       formProps.batchScope.execute(
-        { RiskType: 'SQL注入', SeverityScore: 4, Tags: '确认' },
+        { RiskType: 'SQL Injection', SeverityScore: 4, Tags: '确认' },
         { index: 0, page: 1, limit: 1000, start: 1, end: 1, count: 1 },
       ),
     ).rejects.toThrow('save failed')
@@ -776,7 +776,7 @@ describe('YakitRiskTable 批量操作', () => {
     expect(formProps.batchScope.total).toBe(2501)
     mocks.queryRisks.mockClear()
     await formProps.batchScope.execute(
-      { RiskType: 'SQL注入', SeverityScore: 7.5, Tags: '确认' },
+      { RiskType: 'SQL Injection', SeverityScore: 7.5, Tags: '确认' },
       { index: 2, page: 3, limit: 1000, start: 2001, end: 2501, count: 501 },
     )
 
@@ -786,7 +786,7 @@ describe('YakitRiskTable 批量操作', () => {
       expect.objectContaining({
         Search: 'needle',
         Network: '10.0.0.0/8',
-        RiskType: 'SQL注入',
+        RiskType: 'SQL Injection',
         Ids: [],
         Pagination: { Page: 3, Limit: 1000, OrderBy: 'id', Order: 'desc' },
       }),
@@ -800,7 +800,7 @@ describe('YakitRiskTable 批量操作', () => {
     it(`${selection} selection covers every original risk once when edited fields do not affect the filter`, async () => {
       const risks = Array.from({ length: 1001 }, (_, index) => ({
         Id: index + 1,
-        RiskType: 'SQL注入',
+        RiskType: 'SQL Injection',
         Severity: 'high',
         Tags: '待验证',
       }))
@@ -811,7 +811,7 @@ describe('YakitRiskTable 批量操作', () => {
 
       await act(async () => {
         for (const scope of buildBatchScopes(risks.length)) {
-          await formProps.batchScope.execute({ RiskType: 'SQL注入', SeverityScore: 7, Tags: '确认' }, scope)
+          await formProps.batchScope.execute({ RiskType: 'SQL Injection', SeverityScore: 7, Tags: '确认' }, scope)
         }
       })
 

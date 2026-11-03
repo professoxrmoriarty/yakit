@@ -223,7 +223,7 @@ const SSACompileHistory: React.FC<SSACompileHistoryProps> = (props) => {
       render: (text) => <div>{text === 0 ? '-' : formatTimestamp(text)}</div>,
     },
     {
-      title: '严重',
+      title: 'Critical',
       dataIndex: 'CriticalRiskNumber',
       render: (text) => {
         try {
@@ -236,7 +236,7 @@ const SSACompileHistory: React.FC<SSACompileHistoryProps> = (props) => {
       width: 80,
     },
     {
-      title: '高危',
+      title: 'High',
       dataIndex: 'HighRiskNumber',
       render: (text) => {
         try {
@@ -249,7 +249,7 @@ const SSACompileHistory: React.FC<SSACompileHistoryProps> = (props) => {
       width: 80,
     },
     {
-      title: '中危',
+      title: 'Medium',
       dataIndex: 'WarnRiskNumber',
       render: (text) => {
         try {
@@ -262,7 +262,7 @@ const SSACompileHistory: React.FC<SSACompileHistoryProps> = (props) => {
       width: 80,
     },
     {
-      title: '低危',
+      title: 'Low',
       dataIndex: 'LowRiskNumber',
       render: (text) => {
         try {

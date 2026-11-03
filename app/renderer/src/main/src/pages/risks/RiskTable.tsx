@@ -956,7 +956,7 @@ export const RiskDetails: React.FC<RiskDetailsProp> = React.memo((props: RiskDet
         <div>{(info?.RiskTypeVerbose || info.RiskType).replaceAll('NUCLEI-', '')}</div>
       </Descriptions.Item>
       <Descriptions.Item label="来源">
-        <div>{info?.FromYakScript || '漏洞检测'}</div>
+        <div>{info?.FromYakScript || 'Vulnerability Detection'}</div>
       </Descriptions.Item>
 
       <Descriptions.Item label="反连Token">

@@ -1763,7 +1763,7 @@ const defaultTags = (t: TFunction) => {
   return [
     {
       label: t('YakitRiskSelectTag.false_positive'),
-      value: '误报',
+      value: 'False Positive',
     },
     {
       label: t('YakitRiskSelectTag.ignore'),

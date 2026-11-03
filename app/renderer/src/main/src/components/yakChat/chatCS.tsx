@@ -1709,15 +1709,15 @@ const PluginRunStatus: React.FC<PluginRunStatusProps> = memo((props) => {
                   const getSeverity = (type) => {
                     switch (type) {
                       case 'low':
-                        return '低危'
+                        return 'Low'
                       case 'middle':
-                        return '中危'
+                        return 'Medium'
                       case 'high':
-                        return '高危'
+                        return 'High'
                       case 'critical':
-                        return '严重'
+                        return 'Critical'
                       case 'info':
-                        return '信息'
+                        return 'Info'
                       default:
                         return '未知'
                     }

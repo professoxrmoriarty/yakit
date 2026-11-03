@@ -439,7 +439,7 @@ export const SimpleDetect: React.FC<SimpleDetectProps> = React.memo((props) => {
       ...extraParamsValue.portScanParam,
       Mode: 'all',
       Proto: ['tcp'],
-      EnableBrute: value.scanType === '专项扫描' ? !!value.pluginGroup?.includes('弱口令') : true,
+      EnableBrute: value.scanType === '专项扫描' ? !!value.pluginGroup?.includes('Weak Password') : true,
       SkipCveBaseLine: value.scanType === '专项扫描' ? !!value.pluginGroup?.includes('CVE合规类漏洞') : true,
       LinkPluginConfig: linkPluginConfig,
       Targets: value.Targets,
@@ -868,7 +868,7 @@ const SimpleDetectFormContent: React.FC<SimpleDetectFormContentProps> = React.me
       const newGroup: string[] = group
         .map((item) => item.Value)
         .filter((item) => item !== '基础扫描')
-        .concat(['CVE合规类漏洞', '弱口令'])
+        .concat(['CVE合规类漏洞', 'Weak Password'])
       setGroupOptions([...new Set(newGroup)])
     })
   })
@@ -898,7 +898,7 @@ const SimpleDetectFormContent: React.FC<SimpleDetectFormContentProps> = React.me
           <>
             {scanTypeExtra}
             {scanType === '专项扫描' && (
-              <Form.Item noStyle name="pluginGroup" initialValue={['CVE合规类漏洞', '弱口令']}>
+              <Form.Item noStyle name="pluginGroup" initialValue={['CVE合规类漏洞', 'Weak Password']}>
                 <Checkbox.Group className={styles['plugin-group-wrapper']} disabled={disabled}>
                   {groupOptions.map((ele) => (
                     <YakitCheckbox key={ele} value={ele}>

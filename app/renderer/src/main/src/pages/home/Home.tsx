@@ -1830,13 +1830,13 @@ const Home: React.FC<HomeProp> = (props) => {
                   <span className={styles['data-preview-item-number']}>{numeral(historyData).format('0,0')}</span>
                 </div>
               </div>
-              {(riskLevelTotal('严重') || riskLevelTotal('高危') || riskLevelTotal('中危') || riskLevelTotal('低危')) >
+              {(riskLevelTotal('Critical') || riskLevelTotal('High') || riskLevelTotal('Medium') || riskLevelTotal('Low')) >
               0 ? (
                 <div className={styles['data-preview-item']} style={{ alignItems: 'flex-start', marginTop: 6 }}>
                   <OutlineBugIcon className={styles['data-preview-item-icon']} />
                   <span className={styles['data-preview-item-text']}>{t('HomeCom.vulnerabilityData')}</span>
                   <div className={styles['risk-tag-wrapper']}>
-                    {riskLevelTotal('严重') ? (
+                    {riskLevelTotal('Critical') ? (
                       <div
                         className={classNames(styles['risk-tag'], styles['seriousRisk-tag'])}
                         onClick={() =>
@@ -1847,10 +1847,10 @@ const Home: React.FC<HomeProp> = (props) => {
                         }
                       >
                         <div className={styles['risk-text']}>{t('YakitTag.critical')}</div>
-                        <div className={styles['risk-num']}>{riskLevelTotal('严重')}</div>
+                        <div className={styles['risk-num']}>{riskLevelTotal('Critical')}</div>
                       </div>
                     ) : null}
-                    {riskLevelTotal('高危') ? (
+                    {riskLevelTotal('High') ? (
                       <div
                         className={classNames(styles['risk-tag'], styles['highRisk-tag'])}
                         onClick={() =>
@@ -1861,10 +1861,10 @@ const Home: React.FC<HomeProp> = (props) => {
                         }
                       >
                         <div className={styles['risk-text']}>{t('YakitTag.high')}</div>
-                        <div className={styles['risk-num']}>{riskLevelTotal('高危')}</div>
+                        <div className={styles['risk-num']}>{riskLevelTotal('High')}</div>
                       </div>
                     ) : null}
-                    {riskLevelTotal('中危') ? (
+                    {riskLevelTotal('Medium') ? (
                       <div
                         className={classNames(styles['risk-tag'], styles['mediumRisk-tag'])}
                         onClick={() =>
@@ -1875,10 +1875,10 @@ const Home: React.FC<HomeProp> = (props) => {
                         }
                       >
                         <div className={styles['risk-text']}>{t('YakitTag.warning')}</div>
-                        <div className={styles['risk-num']}>{riskLevelTotal('中危')}</div>
+                        <div className={styles['risk-num']}>{riskLevelTotal('Medium')}</div>
                       </div>
                     ) : null}
-                    {riskLevelTotal('低危') ? (
+                    {riskLevelTotal('Low') ? (
                       <div
                         className={classNames(styles['risk-tag'], styles['lowRisk-tag'])}
                         onClick={() =>
@@ -1889,7 +1889,7 @@ const Home: React.FC<HomeProp> = (props) => {
                         }
                       >
                         <div className={styles['risk-text']}>{t('YakitTag.low')}</div>
-                        <div className={styles['risk-num']}>{riskLevelTotal('低危')}</div>
+                        <div className={styles['risk-num']}>{riskLevelTotal('Low')}</div>
                       </div>
                     ) : null}
                   </div>
