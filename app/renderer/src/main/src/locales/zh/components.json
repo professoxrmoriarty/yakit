@@ -509,7 +509,7 @@
       "destination": "目标",
       "protocol": "协议",
       "length": "长度",
-      "info": "信息"
+      "info": "Info"
     },
     "DemoTCPReassembled": {
       "source": "来源",

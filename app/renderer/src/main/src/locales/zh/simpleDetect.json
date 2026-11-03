@@ -31,7 +31,7 @@
     "stopAddFailed": "停止添加失败：{{error}}",
     "downloadProgress": "下载进度",
     "noPluginsDownloadedHint": "检测到本地未下载任何插件，无法进行安全检测，请点击“一键导入”进行插件下载",
-    "weakPassword": "弱口令",
+    "weakPassword": "Weak Password",
     "cveCompliance": "CVE合规类漏洞"
   }
 }

@@ -46,7 +46,7 @@
     "confirm_feedback_prompt": "确认反馈后，整条漏洞信息将会被上传至后台，开发人员将获取漏洞信息进行误报修复。是否确认反馈？",
     "export_csv": "导出 CSV",
     "export_html": "导出 html",
-    "vulnerability_detection": "漏洞检测",
+    "vulnerability_detection": "Vulnerability Detection",
     "RowContextMenu": {
       "delete_duplicate_title_data": "删除重复标题数据",
       "openInNewWindow": "新窗口打开"
@@ -71,7 +71,7 @@
     "pending_verify": "待验证",
     "confirmed": "确认",
     "repaired": "已修复",
-    "false_positive": "误报",
+    "false_positive": "False Positive",
     "closed": "关闭",
     "verifier": "验证人",
     "verifier_required": "请选择验证人",
@@ -84,7 +84,7 @@
     "disposal_note_placeholder": "请输入处置说明"
   },
   "YakitRiskSelectTag": {
-    "false_positive": "误报",
+    "false_positive": "False Positive",
     "ignore": "忽略",
     "processed": "已处理",
     "pending": "待处理"
@@ -100,7 +100,7 @@
     "retest": "复测",
     "type": "类型",
     "source": "来源",
-    "vulnerability_detection": "漏洞检测",
+    "vulnerability_detection": "Vulnerability Detection",
     "reverse_token": "反连Token",
     "verification_status": "验证状态",
     "verified": "已验证",
@@ -121,7 +121,7 @@
     "related_data_deleted": "相关数据已被删除"
   },
   "AuditResultDescribe": {
-    "vulnerability_detection": "漏洞检测",
+    "vulnerability_detection": "Vulnerability Detection",
     "type": "类型",
     "scan_rules": "扫描规则",
     "vulnerability_description": "漏洞描述",
@@ -132,7 +132,7 @@
     "project": "所属项目："
   },
   "RightBugAuditResult": {
-    "vulnerability_detection": "漏洞检测",
+    "vulnerability_detection": "Vulnerability Detection",
     "type": "类型",
     "scan_rules": "扫描规则",
     "vulnerability_description": "漏洞描述",

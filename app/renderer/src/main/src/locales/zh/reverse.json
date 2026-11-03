@@ -2,7 +2,7 @@
   "NewReverseServerPage": {
     "startFacadeServer": "启动FacadeServer",
     "startFacadeServerFailed": "启动FacadeServer失败: ",
-    "reverseServer": "反连服务器",
+    "reverseServer": "Reverse Server",
     "reverseServerSubTitle": "使用协议端口复用技术，同时在一个端口同时实现 HTTP / RMI / HTTPS 等协议的反连"
   },
   "SettingReverseServer": {

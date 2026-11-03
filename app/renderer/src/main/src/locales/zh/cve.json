@@ -12,8 +12,8 @@
     "difficult": "困难",
     "medium": "一般",
     "easy": "容易",
-    "critical": "严重",
-    "high": "高危",
-    "low": "低危"
+    "critical": "Critical",
+    "high": "High",
+    "low": "Low"
   }
 }

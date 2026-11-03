@@ -303,9 +303,9 @@
   "YakitTag": {
     "none": "無",
     "critical": "嚴重",
-    "high": "高危",
-    "warning": "中危",
-    "low": "低危",
+    "high": "High",
+    "warning": "Medium",
+    "low": "Low",
     "info": "資訊"
   },
   "YakitSpin": {

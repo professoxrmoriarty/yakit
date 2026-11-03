@@ -13,7 +13,7 @@
     "medium": "一般",
     "easy": "容易",
     "critical": "嚴重",
-    "high": "高危",
-    "low": "低危"
+    "high": "High",
+    "low": "Low"
   }
 }

@@ -31,7 +31,7 @@
     "stopAddFailed": "停止新增失敗：{{error}}",
     "downloadProgress": "下載進度",
     "noPluginsDownloadedHint": "檢測到本地未下載任何外掛，無法進行安全檢測，請點選“一鍵匯入”進行外掛下載",
-    "weakPassword": "弱口令",
+    "weakPassword": "Weak Password",
     "cveCompliance": "CVE合規類漏洞"
   }
 }

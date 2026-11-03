@@ -302,11 +302,11 @@
   },
   "YakitTag": {
     "none": "无",
-    "critical": "严重",
-    "high": "高危",
-    "warning": "中危",
-    "low": "低危",
-    "info": "信息"
+    "critical": "Critical",
+    "high": "High",
+    "warning": "Medium",
+    "low": "Low",
+    "info": "Info"
   },
   "YakitSpin": {
     "loading": "加载中...",

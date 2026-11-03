@@ -615,7 +615,7 @@
   },
   "MITMPluginHijackContent": {
     "enabled": "已启用",
-    "hot_patch": "热加载",
+    "hot_patch": "HotPatch",
     "plugin_trace": "插件追踪",
     "local_plugin_saved_successfully": "保存本地插件成功",
     "save_plugin_failed": "保存插件失败:",

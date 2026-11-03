@@ -87,7 +87,7 @@
     "historyNotFound": "上次选中的历史记录已不存在，已清除选中状态",
     "historyRestoreFailed": "恢复失败",
     "fuzzTestRequestFailed": "提交模糊测试请求失败：",
-    "hotReload": "热加载",
+    "hotReload": "HotPatch",
     "buildRequest": "构造请求",
     "syncConfig": "同步配置",
     "allTraffic": "全部流量",
@@ -119,7 +119,7 @@
     "send_request": "发送请求",
     "parameter": "参数",
     "trafficAnalysisMode": "流量分析模式",
-    "trafficAnalysis": "流量分析",
+    "trafficAnalysis": "Traffic Analysis",
     "aiCasualRejectAll": "全部放弃",
     "aiCasualAcceptAll": "全部应用",
     "aiCasualAcceptAllMetaTitle": "即将应用的配置",
@@ -285,8 +285,8 @@
     "debugFailed": "调试失败",
     "engineConsole": "引擎Console",
     "response_decrypt_aes_cbc_hex": "响应解密（AES-CBC/Hex）",
-    "bruteforce_aes_cbc": "爆破 AES-CBC",
-    "bruteforce_rsa_oaep": "爆破 RSA-OAEP",
+    "bruteforce_aes_cbc": "Brute Force AES-CBC",
+    "bruteforce_rsa_oaep": "Brute Force RSA-OAEP",
     "bruteforce_csrf_with_token": "爆破 CSRF（带有保护用 token）",
     "crack_signature": "破解 Signature",
     "third_party_captcha_bypass": "第三方验证码绕过",
@@ -820,7 +820,7 @@
   },
   "SequenceResponse": {
     "matcher_extractor_validation_failed": "匹配器和提取器验证失败：",
-    "hotReload": "热加载",
+    "hotReload": "HotPatch",
     "view_after_executing_sequence": "请执行序列后进行查看"
   },
   "ConcurrencyResponse": {

@@ -14,7 +14,7 @@
     "matcher": "匹配器",
     "discard_or_keep_traffic_analysis_tip": "[丢弃/保留]不会删除History流量数据，而用来决定流量是否会进入流量分析",
     "rule": "规则",
-    "hot_reload": "热加载"
+    "hot_reload": "HotPatch"
   },
   "HttpRuleTable": {
     "packet_id": "数据包ID",
