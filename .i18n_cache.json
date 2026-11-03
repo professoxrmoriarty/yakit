@@ -32,5 +32,19 @@
   "Brute Force RSA-OAEP": "Brute Force RSA-OAEP",
   "High": "High",
   "Port Scan": "Port Scan",
-  "Weak Password": "Weak Password"
+  "Weak Password": "Weak Password",
+  "Output": "Output",
+  "Vulnerability Scan": "Vulnerability Scan",
+  "Payload": "Payload",
+  "Password Brute Force": "Password Brute Force",
+  "Remote Code Execution (RCE)": "Remote Code Execution (RCE)",
+  "Out-of-Band (OOB) Data": "Out-of-Band (OOB) Data",
+  "Replay": "Replay",
+  "Out-of-Band (OOB)": "Out-of-Band (OOB)",
+  "Pass-the-Ticket": "Pass-the-Ticket",
+  "Horizontal IDOR": "Horizontal IDOR",
+  "MemShell": "MemShell",
+  "Trojan": "Trojan",
+  "Broken Access Control": "Broken Access Control",
+  "Bind Shell": "Bind Shell"
 }
