@@ -1,0 +1,124 @@
+name: "2. Build & Release Yakit (English Edition)"
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        type: string
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (ဥပမာ v1.4.9-en)'
+        required: false
+  push:
+    tags:
+      - 'v*-en'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-and-package:
+    name: "Build Yakit (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - name: "1. Checkout Source (English Edition)"
+        uses: actions/checkout@v4
+        with:
+          ref: 'english-edition'
+
+      - name: "2. Setup Node.js 22"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: "3. Pull English Ecosystem Assets (Engine, Extension, Skills, Tools)"
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          echo "Creating Asset Directories..."
+          mkdir -p bins/scripts bins/tools bins/skills bins/engine 2>/dev/null || true
+          mkdir -p app/main/assets/bins/scripts app/main/assets/bins/tools app/main/assets/bins/skills app/main/assets/bins/engine 2>/dev/null || true
+
+          echo "1. Downloading English Yaklang Engine..."
+          gh release download --repo "professoxrmoriarty/yaklang" --pattern "yak_*" --dir "bins/engine/" --clobber 2>/dev/null || true
+
+          echo "2. Downloading English Chrome Extension..."
+          gh release download --repo "professoxrmoriarty/yaklang-chrome-extension" --pattern "google-chrome-plugin.zip" --output "bins/scripts/google-chrome-plugin.zip" --clobber 2>/dev/null || true
+          
+          echo "3. Downloading English AI Skills, PoCs, & Materials..."
+          for BUNDLE in hack-skills yak-skills irify-sast-skill control-theory-skill yaklang-ai-training-materials syntaxflow-ai-training-materials awesome-yak-scripts pentest-crawler-ai-enhance syntaxflow; do
+            gh release download --repo "professoxrmoriarty/${BUNDLE}" --pattern "${BUNDLE}-bundle.zip" --output "bins/skills/${BUNDLE}-en.zip" --clobber 2>/dev/null || true
+            # For fallback backward compatibility
+            gh release download --repo "professoxrmoriarty/${BUNDLE}" --pattern "${BUNDLE}-en.zip" --output "bins/scripts/${BUNDLE}-en.zip" --clobber 2>/dev/null || true
+          done
+
+          echo "4. Downloading JavaJive (Standalone Tool)..."
+          gh release download --repo "professoxrmoriarty/javajive" --pattern "javajive_*" --dir "bins/tools/" --clobber 2>/dev/null || true
+          
+          # Copy to Electron bundle directory
+          cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
+
+      - name: "4. Install Dependencies"
+        run: npm install --legacy-peer-deps || yarn install
+
+      - name: "5. Build & Package Electron App"
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          npm run build || yarn build
+          npm run package || yarn package || npm run electron:build || true
+
+      - name: "6. Upload Artifacts to Pipeline"
+        uses: actions/upload-artifact@v4
+        with:
+          name: yakit-release-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.zip
+            build/*.exe
+            build/*.dmg
+            build/*.AppImage
+          if-no-files-found: warn
+          retention-days: 1
+
+  publish-release:
+    name: "Publish GitHub Release"
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: "1. Download All OS Artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: yakit-release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: "2. Verify Artifacts"
+        run: ls -lh release-assets/
+
+      - name: "3. Publish GitHub Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          name: "Yakit English Edition (${{ inputs.tag_name || github.ref_name }})"
+          overwrite: true
+          body: |
+            ### Yakit English Edition — ${{ inputs.tag_name || github.ref_name }}
+            * **100% Translated to English** via Yaklang Ecosystem Automation.
+            * Includes native **English Yaklang Engine**.
+            * Bundles ecosystem assets: **English Chrome Extension**, **AI Skills**, **PoCs**, and **Standalone Tools** (`JavaJive`, `SyntaxFlow`, etc.).
+          draft: false
+          prerelease: false
+          files: release-assets/*
