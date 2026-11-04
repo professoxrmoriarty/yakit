@@ -1,6 +1,6 @@
 
 <div align="center">
-
+<img src="https://github.com/professoxrmoriarty/.github/blob/main/profile/assets/download (1).png" alt="YAK" width="280" />
 # 🛡️ YAKIT — Cyber Security All-in-One Platform (English Edition)
 
 **An Interactive Penetration Testing Workbench Powered by the Yaklang Security Programming Language (CDSL)**
