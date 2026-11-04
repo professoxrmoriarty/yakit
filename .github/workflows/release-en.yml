@@ -74,12 +74,13 @@ jobs:
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           # 1. Render UI အပိုင်းများကို အရင် Build မည်
           yarn release-render
           yarn release-link-render
           
-          # 2. Electron Main Process ကို Build မည် (ဤအဆင့်က dist/electron/main/index.js ကို ထုတ်ပေးပါမည်)
+          # 2. Electron Main Process ကို Build မည်
           yarn build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
