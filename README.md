@@ -1,5 +1,5 @@
   <div align="center">
-      <img src="imgs/download.png" alt="YAK" width="580" />
+      <img src="imgs/download2.png" alt="YAK" width="680" />
   </div>
   <div align="center">
 # 🛡️ YAKIT — Cyber Security All-in-One Platform (English Edition)
