@@ -78,19 +78,25 @@ jobs:
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          # Build scripts များအတွက် Git version Error များကို ကျော်လွှားရန်
+          GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
         shell: bash
         run: |
-          # Git commands များ Error မတက်စေရန် Safe Directory အဖြစ် ကြေညာပေးမည်
+          # 1. GitHub Runner အတွက် Git လုံခြုံရေးကန့်သတ်ချက်များကို အပြည့်အဝ ပယ်ဖျက်မည်
           git config --global --add safe.directory '*'
+          git config --global core.autocrlf false
           
-          # 1. Render UI အပိုင်းများကို အရင် Build မည်
+          # Version အချက်အလက်များ လိုအပ်ပါက အဆင်သင့်ဖြစ်စေရန် tag တစ်ခု ဖန်တီးပေးထားမည် (fallback)
+          git describe --tags --always || git tag v1.4.9-en
+          
+          # 2. Render UI အပိုင်းများကို အရင် Build မည်
           yarn release-render
           yarn release-link-render
           
-          # 2. Electron Main Process ကို Build မည်
+          # 3. Electron Main Process ကို Build မည် (ဤနေရာတွင် status 128 အများဆုံးဖြစ်တတ်သည်)
           yarn build:electron
           
-          # 3. Packaging လုပ်မည် (OS အလိုက်)
+          # 4. Packaging လုပ်မည် (OS အလိုက်)
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             yarn electron-builder --win --x64
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
