@@ -68,31 +68,28 @@ jobs:
 
       - name: "4. Install Dependencies"
         run: |
-          npm install --legacy-peer-deps || yarn install
-          
-          # Render UI Dependencies များအတွက်ပါ Install လုပ်ပေးမည်
-          cd app/renderer/src/main && (npm install --legacy-peer-deps || yarn install) && cd ../../../..
-          cd app/renderer/engine-link-startup && (npm install --legacy-peer-deps || yarn install) && cd ../../..
+          # package.json ပါ script များသည် yarn ကိုသာ အခြေခံထားသောကြောင့် yarn ကို အသုံးပြုပါမည်
+          yarn install
 
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           # 1. Render UI အပိုင်းများကို အရင် Build မည်
-          npm run release-render || true
-          npm run release-link-render || true
+          yarn release-render
+          yarn release-link-render
           
-          # 2. Electron Main Process ကို Build မည်
-          npm run build:electron || true
+          # 2. Electron Main Process ကို Build မည် (ဤအဆင့်က dist/electron/main/index.js ကို ထုတ်ပေးပါမည်)
+          yarn build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            npx electron-builder --win --x64
+            yarn electron-builder --win --x64
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            npx electron-builder --mac --x64
-            npx electron-builder --mac --arm64
+            yarn electron-builder --mac --x64
+            yarn electron-builder --mac --arm64
           else
-            npx electron-builder --linux --x64
+            yarn electron-builder --linux --x64
           fi
 
       - name: "6. Upload Artifacts to Pipeline"
