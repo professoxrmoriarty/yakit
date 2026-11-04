@@ -1,6 +1,7 @@
-imgs/download.png
-<div align="center">
-<img src="imgs/download.png" alt="YAK" width="280" />
+  <div align="center">
+      <img src="imgs/download.png" alt="YAK" width="580" />
+  </div>
+  <div align="center">
 # 🛡️ YAKIT — Cyber Security All-in-One Platform (English Edition)
 
 **An Interactive Penetration Testing Workbench Powered by the Yaklang Security Programming Language (CDSL)**
