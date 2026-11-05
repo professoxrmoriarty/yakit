@@ -66,25 +66,31 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Direct Script Patching & Dependencies Install"
+      - name: "4. Deep Patching & Dependencies Install"
         shell: bash
         run: |
-          # (၁) Git ကြောင့် status 128 ဖြစ်စေသော အဓိကတရားခံများကို 'sed' ဖြင့် တိုက်ရိုက်ဖြတ်တောက်မည်
-          # release-render.js တွင် git version ယူသည့်အပိုင်းကို 'v1.4.9-en' ဟု အစားထိုးမည်
-          sed -i 's/execSync.*git.*describe.*/"v1.4.9-en"/g' app/renderer/src/main/scripts/release-render.js || true
-          sed -i 's/execSync.*git.*rev-parse.*/"v1.4.9-en"/g' app/renderer/src/main/scripts/release-render.js || true
-          
-          # build-electron.mjs ရှိ git ခေါ်ဆိုမှုများကို အစားထိုးမည်
-          sed -i 's/execSync.*git.*describe.*/"v1.4.9-en"/g' scripts/build-electron.mjs || true
-          sed -i 's/execSync.*git.*rev-parse.*/"v1.4.9-en"/g' scripts/build-electron.mjs || true
-
-          # release-render.cjs ရှိလျှင် ထပ်မံပြင်ဆင်မည်
-          if [ -f "app/renderer/engine-link-startup/scripts/release-render.cjs" ]; then
-            sed -i 's/execSync.*git.*/"v1.4.9-en"/g' app/renderer/engine-link-startup/scripts/release-render.cjs || true
-          fi
-
-          # (၂) Git လုံခြုံရေးပြဿနာများကို ကာကွယ်ရန်
+          # (၁) Git လုံခြုံရေးပြဿနာများကို ကာကွယ်ရန်
           git config --global --add safe.directory '*'
+
+          # (၂) Node.js ကို အသုံးပြု၍ `execSync` ကို အပြီးတိုင် ဖျက်ထုတ်မည်
+          # Multi-line နှင့် မည်သို့ပင် ရေးထားစေကာမူ `git` ပါသော execSync မှန်သမျှကို "v1.4.9-en" ဖြင့် အစားထိုးမည်
+          node -e "
+          const fs = require('fs');
+          function patchFile(filePath) {
+            if (fs.existsSync(filePath)) {
+              let content = fs.readFileSync(filePath, 'utf8');
+              // Replace anything that looks like execSync('git ...') with a static string
+              content = content.replace(/execSync\s*\(\s*['\"\`].*?git.*?['\"\`].*?\)/gs, '\"v1.4.9-en\"');
+              // Replace require('child_process').execSync('git ...') just in case
+              content = content.replace(/require\(['\"]child_process['\"]\)\.execSync\s*\(\s*['\"\`].*?git.*?['\"\`].*?\)/gs, '\"v1.4.9-en\"');
+              fs.writeFileSync(filePath, content);
+              console.log('Successfully patched: ' + filePath);
+            }
+          }
+          patchFile('app/renderer/src/main/scripts/release-render.js');
+          patchFile('app/renderer/engine-link-startup/scripts/release-render.cjs');
+          patchFile('scripts/build-electron.mjs');
+          "
 
           # (၃) Dependencies များကို Install လုပ်မည်
           if [ -f "pnpm-workspace.yaml" ]; then
@@ -109,11 +115,11 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 1. Render UI ကို Build မည် (sed ဖြင့် ဖြတ်တောက်ထားသဖြင့် Git Error လုံးဝ မတက်နိုင်တော့ပါ)
+          # 1. Render UI ကို Build မည် (Deep patch လုပ်ထားသဖြင့် လိုင်းနံပါတ် ၂၉ ရှိ Error လုံးဝ မတက်နိုင်တော့ပါ)
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # 2. Electron ကို Build မည် (Mock Git ကြောင့် index.js ပျောက်သောပြဿနာ ကင်းဝေးသွားပါမည်)
+          # 2. Electron ကို Build မည် 
           yarn build:electron || npm run build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
