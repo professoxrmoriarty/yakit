@@ -69,11 +69,20 @@ jobs:
       - name: "4. Install Dependencies"
         shell: bash
         run: |
+          # 1. Root level တွင် Install လုပ်မည် (Workspace များရှိပါက အလိုအလျောက် ချိတ်ဆက်ပေးရန်)
           yarn install
           
-          # Render UI များအတွက် Sub-folders ထဲဝင်၍ပါ သေချာစွာ Install လုပ်မည်
+          # 2. အကယ်၍ Lerna သို့မဟုတ် Bootstrap script ရှိပါက Run ပေးမည် (Local link ပြဿနာများအတွက်)
+          yarn run bootstrap || true
+          yarn run link || true
+          
+          # 3. Render UI များအတွက် Sub-folders ထဲဝင်၍ပါ သေချာစွာ Install ပြန်လုပ်မည်
           cd app/renderer/src/main && yarn install && cd ../../../..
           cd app/renderer/engine-link-startup && yarn install && cd ../../..
+          
+          # 4. Error တက်နေသော '@yakit-libs/color/node' module ပြဿနာကို ကျော်လွှားရန်
+          # အကယ်၍ ၎င်းသည် workspaces/libs ထဲတွင် ရှိနေပါက တိုက်ရိုက် Build ပေးမည်
+          if [ -d "libs/color" ]; then cd libs/color && yarn install && yarn build || true; cd ../..; fi
 
       - name: "5. Build & Package Electron App"
         env:
