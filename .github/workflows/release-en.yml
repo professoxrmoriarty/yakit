@@ -78,17 +78,20 @@ jobs:
           # 2. Install ALL dependencies from the root
           yarn install
           
-          # 3. Explicitly build all workspaces (this fixes the @yakit-libs error)
-          # The 'wsrun' or yarn workspaces foreach commands ensure the mono-repo links correctly
-          yarn workspaces run build || true
-          
-          # 4. Fallback manual build just for safety
+          # 3. Force Build of Local Libraries
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
               echo "Building internal lib: $dir"
-              (cd "$dir" && yarn run build || npm run build || true)
+              (cd "$dir" && yarn install && yarn run build || npm run build || true)
             fi
           done
+
+          # 4. Critical Fix: Force install the specific missing module into the root
+          # This guarantees that 'scripts/build-electron.mjs' can find '@yakit-libs/color/node'
+          if [ -d "libs/color" ]; then
+            echo "Force installing libs/color to root..."
+            yarn add file:./libs/color || npm install ./libs/color
+          fi
 
       - name: "5. Build & Package Electron App"
         env:
