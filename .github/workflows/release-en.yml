@@ -66,61 +66,35 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Deep Patching & Dependencies Install"
+      - name: "4. Prepare Environment & Install Workspace Dependencies"
         shell: bash
         run: |
-          # (၁) Git လုံခြုံရေးပြဿနာများကို ကာကွယ်ရန်
+          # (၁) Git 'status: 128' Error ကို Native နည်းလမ်းဖြင့် အမြစ်ပြတ်ဖြေရှင်းခြင်း
+          # Yakit ၏ Build script များသည် version ယူရန် `git describe --tags` ကို အသုံးပြုသည်။
+          # ထို့ကြောင့် Error မတက်စေရန် Dummy Tag တစ်ခု ကြိုတင်ဖန်တီးပေးထားမည်။
           git config --global --add safe.directory '*'
+          git config --global user.email "bot@yaklang.io"
+          git config --global user.name "Yakit Bot"
+          git commit --allow-empty -m "Trigger build" || true
+          git tag -f v1.4.9-en || true
 
-          # (၂) Node.js ကို အသုံးပြု၍ `execSync` ကို အပြီးတိုင် ဖျက်ထုတ်မည်
-          # Multi-line နှင့် မည်သို့ပင် ရေးထားစေကာမူ `git` ပါသော execSync မှန်သမျှကို "v1.4.9-en" ဖြင့် အစားထိုးမည်
-          node -e "
-          const fs = require('fs');
-          function patchFile(filePath) {
-            if (fs.existsSync(filePath)) {
-              let content = fs.readFileSync(filePath, 'utf8');
-              // Replace anything that looks like execSync('git ...') with a static string
-              content = content.replace(/execSync\s*\(\s*['\"\`].*?git.*?['\"\`].*?\)/gs, '\"v1.4.9-en\"');
-              // Replace require('child_process').execSync('git ...') just in case
-              content = content.replace(/require\(['\"]child_process['\"]\)\.execSync\s*\(\s*['\"\`].*?git.*?['\"\`].*?\)/gs, '\"v1.4.9-en\"');
-              fs.writeFileSync(filePath, content);
-              console.log('Successfully patched: ' + filePath);
-            }
-          }
-          patchFile('app/renderer/src/main/scripts/release-render.js');
-          patchFile('app/renderer/engine-link-startup/scripts/release-render.cjs');
-          patchFile('scripts/build-electron.mjs');
-          "
-
-          # (၃) Dependencies များကို Install လုပ်မည်
-          if [ -f "pnpm-workspace.yaml" ]; then
-            npm install -g pnpm && pnpm install
-          else
-            yarn install && npx lerna bootstrap || true
-          fi
-
-          # (၄) Render UI ပိုင်းများကို Install လုပ်မည်
-          (cd app/renderer/src/main && yarn install)
-          (cd app/renderer/engine-link-startup && yarn install)
-
-          # (၅) Internal Libraries များ Build မည်
-          for dir in libs/* packages/*; do
-            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              (cd "$dir" && yarn install && (yarn build || npm run build || true))
-            fi
-          done
+          # (၂) Workspace Dependencies များကို Install လုပ်ခြင်း
+          # သတိပြုရန်: Sub-folder များထဲဝင်၍ yarn install လုံးဝမလုပ်ရပါ (Monorepo Symlink များ ပျက်သွားနိုင်သောကြောင့်ဖြစ်သည်)
+          yarn install
 
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 1. Render UI ကို Build မည် (Deep patch လုပ်ထားသဖြင့် လိုင်းနံပါတ် ၂၉ ရှိ Error လုံးဝ မတက်နိုင်တော့ပါ)
-          yarn release-render || npm run release-render
-          yarn release-link-render || npm run release-link-render
+          # 1. Render UI များကို Build မည်
+          # (Yarn workspaces မှန်ကန်သွားသဖြင့် @yakit-libs error လုံးဝမတက်တော့ပါ)
+          yarn release-render
+          yarn release-link-render
           
-          # 2. Electron ကို Build မည် 
-          yarn build:electron || npm run build:electron
+          # 2. Electron Main Process ကို Build မည်
+          # (Git တွင် Tag ဖန်တီးပေးထားသဖြင့် Script မူမပျက်ဘဲ index.js အောင်မြင်စွာ ထွက်လာပါမည်)
+          yarn build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
