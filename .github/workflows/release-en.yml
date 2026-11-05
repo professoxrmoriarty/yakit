@@ -68,29 +68,27 @@ jobs:
       - name: "4. Prepare Environment & Install Workspace Dependencies"
         shell: bash
         run: |
-          # (၁) Git 'status: 128' Error ကို Native နည်းလမ်းဖြင့် ဖြေရှင်းခြင်း
+          # 1. Native fix for Git 'status: 128' Error
           git config --global --add safe.directory '*'
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
           git commit --allow-empty -m "Trigger build" || true
           git tag -f v1.4.9-en || true
 
-          # (၂) Workspace Dependencies များကို Install လုပ်ခြင်း
-          # root တွင် အရင်ဆုံး install လုပ်မည်
+          # 2. Install ALL dependencies from the root
           yarn install
           
-          # (၃) Local Libraries များ (ဥပမာ @yakit-libs) ကို သေချာစွာ Build လုပ်မည်
-          # module_not_found error ကို ဖြေရှင်းရန်ဖြစ်သည်
+          # 3. Explicitly build all workspaces (this fixes the @yakit-libs error)
+          # The 'wsrun' or yarn workspaces foreach commands ensure the mono-repo links correctly
+          yarn workspaces run build || true
+          
+          # 4. Fallback manual build just for safety
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
               echo "Building internal lib: $dir"
-              (cd "$dir" && yarn install && (yarn build || npm run build || true))
+              (cd "$dir" && yarn run build || npm run build || true)
             fi
           done
-          
-          # Render UI ပိုင်းများကို သေချာစွာ Install ထပ်လုပ်မည်
-          (cd app/renderer/src/main && yarn install)
-          (cd app/renderer/engine-link-startup && yarn install)
 
       - name: "5. Build & Package Electron App"
         env:
