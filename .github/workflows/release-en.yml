@@ -65,7 +65,7 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Prepare Environment & Patch Scripts"
+      - name: "4. Prepare Environment & Fix Missing Modules"
         shell: bash
         run: |
           # 1. Native fix for Git 'status: 128' Error
@@ -78,21 +78,37 @@ jobs:
           # 2. Install Dependencies
           yarn install
           
-          # 3. CRITICAL FIX: Patch 'build-electron.mjs' to remove the missing module
-          # ဤအဆင့်က '@yakit-libs/color/node' ကို import လုပ်ထားသော စာကြောင်းများကို ဖြတ်ထုတ်လိုက်ပါမည်
-          if [ -f "scripts/build-electron.mjs" ]; then
-            echo "Patching build-electron.mjs to bypass @yakit-libs/color/node..."
-            # Node.js ကိုသုံး၍ ဖိုင်ထဲမှ import ကို အလွတ် (empty string) ဖြင့် အစားထိုးမည်
-            node -e "
-            const fs = require('fs');
-            const file = 'scripts/build-electron.mjs';
-            let content = fs.readFileSync(file, 'utf8');
-            // '@yakit-libs/color/node' ပါသော import လိုင်းအားလုံးကို ဖျက်မည်
-            content = content.replace(/.*@yakit-libs\/color\/node.*/g, '// Module removed by patch');
-            fs.writeFileSync(file, content);
-            console.log('Successfully patched build-electron.mjs');
-            "
-          fi
+          # 3. CRITICAL FIX: Create a dummy module for '@yakit-libs/color/node'
+          # This ensures that when build-electron.mjs requires it, it won't crash.
+          echo "Creating dummy module for @yakit-libs/color/node..."
+          mkdir -p node_modules/@yakit-libs/color
+          
+          # Create a dummy index.js that exports empty functions or objects
+          cat << 'EOF' > node_modules/@yakit-libs/color/node.js
+          module.exports = {
+            red: (t) => t,
+            green: (t) => t,
+            yellow: (t) => t,
+            blue: (t) => t,
+            magenta: (t) => t,
+            cyan: (t) => t,
+            white: (t) => t,
+            gray: (t) => t,
+            bold: (t) => t,
+            dim: (t) => t,
+            italic: (t) => t,
+            underline: (t) => t,
+          };
+          EOF
+          
+          # Create a minimal package.json so Node.js recognizes it as a module
+          cat << 'EOF' > node_modules/@yakit-libs/color/package.json
+          {
+            "name": "@yakit-libs/color",
+            "version": "1.0.0",
+            "main": "node.js"
+          }
+          EOF
           
           # 4. Optional: Render UI ပိုင်းများကို သေချာစွာ Install ထပ်လုပ်မည်
           (cd app/renderer/src/main && yarn install)
