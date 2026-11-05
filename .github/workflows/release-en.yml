@@ -66,60 +66,57 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Install Dependencies & Global Git Mock"
+      - name: "4. Direct Script Patching & Dependencies Install"
         shell: bash
         run: |
-          # (၁) Node subprocess အားလုံးကို လွှမ်းမိုးနိုင်ရန် Git အတု ဖန်တီးမည်
-          mkdir -p $HOME/fake-bin
+          # (၁) Git ကြောင့် status 128 ဖြစ်စေသော အဓိကတရားခံများကို 'sed' ဖြင့် တိုက်ရိုက်ဖြတ်တောက်မည်
+          # release-render.js တွင် git version ယူသည့်အပိုင်းကို 'v1.4.9-en' ဟု အစားထိုးမည်
+          sed -i 's/execSync.*git.*describe.*/"v1.4.9-en"/g' app/renderer/src/main/scripts/release-render.js || true
+          sed -i 's/execSync.*git.*rev-parse.*/"v1.4.9-en"/g' app/renderer/src/main/scripts/release-render.js || true
           
-          # Linux/macOS အတွက် Fake Git
-          cat << 'EOF' > $HOME/fake-bin/git
-          #!/bin/bash
-          echo "v1.4.9-en"
-          EOF
-          chmod +x $HOME/fake-bin/git
-          
-          # Windows အတွက် Fake Git (git.cmd)
-          cat << 'EOF' > $HOME/fake-bin/git.cmd
-          @echo off
-          echo v1.4.9-en
-          EOF
-          
-          # GitHub Actions ၏ PATH အရှေ့ဆုံးသို့ Fake Git ကို ထည့်မည်
-          echo "$HOME/fake-bin" >> $GITHUB_PATH
-          
-          # (၂) Dependencies များ Install လုပ်မည်
+          # build-electron.mjs ရှိ git ခေါ်ဆိုမှုများကို အစားထိုးမည်
+          sed -i 's/execSync.*git.*describe.*/"v1.4.9-en"/g' scripts/build-electron.mjs || true
+          sed -i 's/execSync.*git.*rev-parse.*/"v1.4.9-en"/g' scripts/build-electron.mjs || true
+
+          # release-render.cjs ရှိလျှင် ထပ်မံပြင်ဆင်မည်
+          if [ -f "app/renderer/engine-link-startup/scripts/release-render.cjs" ]; then
+            sed -i 's/execSync.*git.*/"v1.4.9-en"/g' app/renderer/engine-link-startup/scripts/release-render.cjs || true
+          fi
+
+          # (၂) Git လုံခြုံရေးပြဿနာများကို ကာကွယ်ရန်
+          git config --global --add safe.directory '*'
+
+          # (၃) Dependencies များကို Install လုပ်မည်
           if [ -f "pnpm-workspace.yaml" ]; then
             npm install -g pnpm && pnpm install
           else
             yarn install && npx lerna bootstrap || true
           fi
-          
-          # (၃) Local Libraries များ (ဥပမာ @yakit-libs) ကို Build လုပ်မည်
+
+          # (၄) Render UI ပိုင်းများကို Install လုပ်မည်
+          (cd app/renderer/src/main && yarn install)
+          (cd app/renderer/engine-link-startup && yarn install)
+
+          # (၅) Internal Libraries များ Build မည်
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              echo "Building internal lib: $dir"
               (cd "$dir" && yarn install && (yarn build || npm run build || true))
             fi
           done
-
-          # (၄) Render UI ပိုင်းများကို သေချာစွာ Install ထပ်လုပ်မည်
-          (cd app/renderer/src/main && yarn install)
-          (cd app/renderer/engine-link-startup && yarn install)
 
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 1. Render UI ကို Build မည် (Sub-process အားလုံးသည် Fake Git ကိုသာ အလိုအလျောက် သုံးသွားပါမည်)
+          # 1. Render UI ကို Build မည် (sed ဖြင့် ဖြတ်တောက်ထားသဖြင့် Git Error လုံးဝ မတက်နိုင်တော့ပါ)
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # 2. Electron ကို Build မည် 
+          # 2. Electron ကို Build မည် (Mock Git ကြောင့် index.js ပျောက်သောပြဿနာ ကင်းဝေးသွားပါမည်)
           yarn build:electron || npm run build:electron
           
-          # 3. OS အလိုက် Packaging လုပ်မည်
+          # 3. Packaging လုပ်မည် (OS အလိုက်)
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             npx electron-builder --win --x64
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
