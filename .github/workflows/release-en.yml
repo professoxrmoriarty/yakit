@@ -65,7 +65,7 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Prepare Environment & Install Workspace Dependencies"
+      - name: "4. Prepare Environment & Patch Scripts"
         shell: bash
         run: |
           # 1. Native fix for Git 'status: 128' Error
@@ -75,23 +75,28 @@ jobs:
           git commit --allow-empty -m "Trigger build" || true
           git tag -f v1.4.9-en || true
 
-          # 2. Install ALL dependencies from the root
+          # 2. Install Dependencies
           yarn install
           
-          # 3. Force Build of Local Libraries
-          for dir in libs/* packages/*; do
-            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              echo "Building internal lib: $dir"
-              (cd "$dir" && yarn install && yarn run build || npm run build || true)
-            fi
-          done
-
-          # 4. Critical Fix: Force install the specific missing module into the root
-          # This guarantees that 'scripts/build-electron.mjs' can find '@yakit-libs/color/node'
-          if [ -d "libs/color" ]; then
-            echo "Force installing libs/color to root..."
-            yarn add file:./libs/color || npm install ./libs/color
+          # 3. CRITICAL FIX: Patch 'build-electron.mjs' to remove the missing module
+          # ဤအဆင့်က '@yakit-libs/color/node' ကို import လုပ်ထားသော စာကြောင်းများကို ဖြတ်ထုတ်လိုက်ပါမည်
+          if [ -f "scripts/build-electron.mjs" ]; then
+            echo "Patching build-electron.mjs to bypass @yakit-libs/color/node..."
+            # Node.js ကိုသုံး၍ ဖိုင်ထဲမှ import ကို အလွတ် (empty string) ဖြင့် အစားထိုးမည်
+            node -e "
+            const fs = require('fs');
+            const file = 'scripts/build-electron.mjs';
+            let content = fs.readFileSync(file, 'utf8');
+            // '@yakit-libs/color/node' ပါသော import လိုင်းအားလုံးကို ဖျက်မည်
+            content = content.replace(/.*@yakit-libs\/color\/node.*/g, '// Module removed by patch');
+            fs.writeFileSync(file, content);
+            console.log('Successfully patched build-electron.mjs');
+            "
           fi
+          
+          # 4. Optional: Render UI ပိုင်းများကို သေချာစွာ Install ထပ်လုပ်မည်
+          (cd app/renderer/src/main && yarn install)
+          (cd app/renderer/engine-link-startup && yarn install)
 
       - name: "5. Build & Package Electron App"
         env:
