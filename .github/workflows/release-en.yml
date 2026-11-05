@@ -66,47 +66,43 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Install Dependencies & Fix Monorepo Links"
+      - name: "4. Install Dependencies & Mock Git for Builds"
         shell: bash
         run: |
           # (၁) Git လုံခြုံရေးပြဿနာများကို ကျော်လွှားရန်
           git config --global --add safe.directory '*'
           
-          # (၂) status: 128 ကို လုံးဝပျောက်ကင်းစေရန် (Node Script သုံး၍ Auto-Patch လုပ်မည်)
-          # release-render.js အတွင်းရှိ execSync('git ...') များကြောင့် Crash မဖြစ်စေရန် ၎င်းတို့ကို static string ဖြင့် အစားထိုးပါမည်
-          node -e "
-          const fs = require('fs');
-          const files = ['app/renderer/src/main/scripts/release-render.js', 'scripts/build-electron.mjs'];
-          files.forEach(p => {
-            if(fs.existsSync(p)) {
-              let c = fs.readFileSync(p, 'utf8');
-              c = c.replace(/require\(['\"]child_process['\"]\)\.execSync\(['\"]git [^)]+['\"]\)(?:\.toString\(\))?(?:\.trim\(\))?/g, '\"v1.4.9-en\"');
-              c = c.replace(/execSync\(['\"]git [^)]+['\"]\)(?:\.toString\(\))?(?:\.trim\(\))?/g, '\"v1.4.9-en\"');
-              fs.writeFileSync(p, c);
-              console.log(p + ' patched successfully!');
+          # (၂) Git execSync ကြောင့် status: 128 တက်ခြင်းကို အမြစ်ပြတ်ရှင်းလင်းရန် 
+          # Node ၏ child_process ကို လုံးဝ Override လုပ်မည့် script တစ်ခုကို ဖန်တီးပါမည်
+          cat << 'EOF' > mock-git.js
+          const cp = require('child_process');
+          const originalExecSync = cp.execSync;
+          cp.execSync = function(cmd, options) {
+            if (typeof cmd === 'string' && cmd.includes('git')) {
+              console.log('[Mocked Git] ' + cmd);
+              return Buffer.from('v1.4.9-en\n');
             }
-          });
-          " || true
+            return originalExecSync.apply(this, arguments);
+          };
+          // release-render.js ကို ခေါ်ယူ Run ပါမည်
+          require('./app/renderer/src/main/scripts/release-render.js');
+          EOF
 
-          # (၃) macOS တွင် တွေ့ရသော @yakit-libs/color ပြဿနာကို ဖြေရှင်းရန် (Smart Install)
-          # pnpm သုံးထားခြင်းရှိပါက pnpm ကို အလိုအလျောက် သွင်းပေးမည်
+          # (၃) Dependencies များ Install လုပ်မည်
           if [ -f "pnpm-workspace.yaml" ]; then
-            npm install -g pnpm
-            pnpm install
+            npm install -g pnpm && pnpm install
           else
-            yarn install
-            npx lerna bootstrap || true
+            yarn install && npx lerna bootstrap || true
           fi
           
-          # Internal Libraries (ဥပမာ- @yakit-libs) များကို အတင်းအကျပ် Build လုပ်ပေးမည်
+          # (၄) Local Libraries များ (ဥပမာ @yakit-libs) ကို Build လုပ်မည်
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              echo "Building internal lib: $dir"
               (cd "$dir" && yarn install && (yarn build || npm run build || true))
             fi
           done
 
-          # Render UI ပိုင်းများကို သေချာစွာ Install ထပ်လုပ်မည်
+          # (၅) Render UI ပိုင်းများကို Install ထပ်လုပ်မည်
           (cd app/renderer/src/main && yarn install)
           (cd app/renderer/engine-link-startup && yarn install)
 
@@ -115,11 +111,11 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 1. Render UI ကို Build မည် (status 128 တက်ခဲ့သောနေရာ - ယခု မတက်နိုင်တော့ပါ)
-          yarn release-render || npm run release-render
+          # 1. Render UI ကို Build မည် (Mock ထားသော Git ဖြင့် Run သဖြင့် status 128 လုံးဝမတက်နိုင်တော့ပါ)
+          node mock-git.js
           yarn release-link-render || npm run release-link-render
           
-          # 2. Electron ကို Build မည် (macOS တွင် @yakit-libs error တက်ခဲ့သောနေရာ)
+          # 2. Electron ကို Build မည် 
           yarn build:electron || npm run build:electron
           
           # 3. OS အလိုက် Packaging လုပ်မည်
