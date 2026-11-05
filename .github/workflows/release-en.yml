@@ -32,7 +32,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: 'english-edition'
-          fetch-depth: 0  # Git status 128 Error ဖြေရှင်းရန် ဤစာကြောင်း ထည့်သွင်းထားပါသည်
 
       - name: "2. Setup Node.js 22"
         uses: actions/setup-node@v4
@@ -69,9 +68,8 @@ jobs:
       - name: "4. Prepare Environment & Install Workspace Dependencies"
         shell: bash
         run: |
-          # (၁) Git 'status: 128' Error ကို Native နည်းလမ်းဖြင့် အမြစ်ပြတ်ဖြေရှင်းခြင်း
-          # Yakit ၏ Build script များသည် version ယူရန် `git describe --tags` ကို အသုံးပြုသည်။
-          # ထို့ကြောင့် Error မတက်စေရန် Dummy Tag တစ်ခု ကြိုတင်ဖန်တီးပေးထားမည်။
+          # (၁) Git 'status: 128' Error ကို Native နည်းလမ်းဖြင့် ဖြေရှင်းခြင်း
+          # Build scripts များမှ `git describe --tags` ခေါ်ယူချိန် Error မတက်စေရန် Dummy Tag တစ်ခု ကြိုတင်ဖန်တီးပေးထားမည်
           git config --global --add safe.directory '*'
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
@@ -79,7 +77,6 @@ jobs:
           git tag -f v1.4.9-en || true
 
           # (၂) Workspace Dependencies များကို Install လုပ်ခြင်း
-          # သတိပြုရန်: Sub-folder များထဲဝင်၍ yarn install လုံးဝမလုပ်ရပါ (Monorepo Symlink များ ပျက်သွားနိုင်သောကြောင့်ဖြစ်သည်)
           yarn install
 
       - name: "5. Build & Package Electron App"
@@ -88,12 +85,10 @@ jobs:
         shell: bash
         run: |
           # 1. Render UI များကို Build မည်
-          # (Yarn workspaces မှန်ကန်သွားသဖြင့် @yakit-libs error လုံးဝမတက်တော့ပါ)
           yarn release-render
           yarn release-link-render
           
           # 2. Electron Main Process ကို Build မည်
-          # (Git တွင် Tag ဖန်တီးပေးထားသဖြင့် Script မူမပျက်ဘဲ index.js အောင်မြင်စွာ ထွက်လာပါမည်)
           yarn build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
@@ -142,6 +137,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           name: "Yakit English Edition (${{ inputs.tag_name || github.ref_name }})"
           overwrite: true
           body: |
