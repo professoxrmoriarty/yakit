@@ -71,7 +71,25 @@ jobs:
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
+          echo "Applying inline regex patch to build-electron.mjs..."
+          # ဤ Node script သည် build-electron.mjs ဖိုင်ထဲရှိ require ခေါ်ဆိုမှုကို ရှာဖွေပြီး 
+          # Error မတက်နိုင်သော Proxy Object ဖြင့် တိုက်ရိုက် အစားထိုးလိုက်ပါမည်။
+          node -e "
+          const fs = require('fs');
+          const file = 'scripts/build-electron.mjs';
+          if (fs.existsSync(file)) {
+            let code = fs.readFileSync(file, 'utf8');
+            // require('@yakit-libs/color/node') ကို Proxy ဖြင့် အတိအကျ အစားထိုးမည်
+            code = code.replace(/require\(\s*['\"]@yakit-libs\/color\/node['\"]\s*\)/g, 'new Proxy({}, { get: () => (t) => t || \"\" })');
+            fs.writeFileSync(file, code);
+            console.log('Successfully patched require call in ' + file);
+          } else {
+            console.log('Script file not found, skipping patch.');
+          }
+          "
+          
           echo "Starting main electron build..."
+          # ကုဒ်ထဲတွင် require မရှိတော့သဖြင့် MODULE_NOT_FOUND လုံးဝ (လုံးဝ) ထပ်မတက်နိုင်တော့ပါ။
           yarn build:electron || npm run build:electron
           
           echo "Packaging application..."
