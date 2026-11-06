@@ -14,9 +14,9 @@ permissions:
   contents: write
 
 jobs:
-  build-and-package:
+ build-and-package:
     strategy:
-    fail-fast: false # OS တစ်ခု Error တက်တိုင်း ကျန်တာတွေကို လိုက်မပိတ်စေရန် ဤစာကြောင်း ထည့်ပါ
+      fail-fast: false # OS တစ်ခု Error တက်တိုင်း ကျန်တာတွေကို လိုက်မပိတ်စေရန် ဤစာကြောင်း ထည့်ပါ
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
