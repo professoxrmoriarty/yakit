@@ -38,81 +38,60 @@ jobs:
         with:
           node-version: '22'
 
-      - name: "3. Pull English Ecosystem Assets"
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: "3. Prepare Environment & Force Workspace Links"
         shell: bash
         run: |
-          echo "Creating Asset Directories..."
-          mkdir -p bins/scripts bins/tools bins/skills bins/engine 2>/dev/null || true
-          mkdir -p app/main/assets/bins/scripts app/main/assets/bins/tools app/main/assets/bins/skills app/main/assets/bins/engine 2>/dev/null || true
-
-          echo "1. Downloading English Yaklang Engine..."
-          gh release download --repo "professoxrmoriarty/yaklang" --pattern "yak_*" --dir "bins/engine/" --clobber 2>/dev/null || true
-
-          echo "2. Downloading English Chrome Extension..."
-          gh release download --repo "professoxrmoriarty/yaklang-chrome-extension" --pattern "google-chrome-plugin.zip" --output "bins/scripts/google-chrome-plugin.zip" --clobber 2>/dev/null || true
-          
-          echo "3. Downloading English AI Skills, PoCs, & Materials..."
-          for BUNDLE in hack-skills yak-skills irify-sast-skill control-theory-skill yaklang-ai-training-materials syntaxflow-ai-training-materials awesome-yak-scripts pentest-crawler-ai-enhance syntaxflow; do
-            gh release download --repo "professoxrmoriarty/${BUNDLE}" --pattern "${BUNDLE}-bundle.zip" --output "bins/skills/${BUNDLE}-en.zip" --clobber 2>/dev/null || true
-            gh release download --repo "professoxrmoriarty/${BUNDLE}" --pattern "${BUNDLE}-en.zip" --output "bins/scripts/${BUNDLE}-en.zip" --clobber 2>/dev/null || true
-          done
-
-          echo "4. Downloading JavaJive (Standalone Tool)..."
-          gh release download --repo "professoxrmoriarty/javajive" --pattern "javajive_*" --dir "bins/tools/" --clobber 2>/dev/null || true
-          
-          # Copy to Electron bundle directory
-          cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
-
-      - name: "4. Prepare Environment & Node Resolution Hack"
-        shell: bash
-        run: |
-          # 1. Native fix for Git 'status: 128' Error
+          # (၁) Native fix for Git 'status: 128' Error
           git config --global --add safe.directory '*'
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
           git commit --allow-empty -m "Trigger build" || true
-          git tag -f v1.4.9-en || true
+          git tag -f ${{ github.event.inputs.tag_name || github.ref_name || 'v1.4.9-en' }} || true
 
-          # 2. Install Dependencies
-          yarn install
+          # (၂) Yarn PnP ကို ပိတ်ပြီး သာမန် node_modules စနစ်ကို အသုံးပြုရန် သတ်မှတ်ခြင်း (အလွန်အရေးကြီးပါသည်)
+          echo "nodeLinker: node-modules" > .yarnrc.yml
           
-          # 3. ULTIMATE HACK: Create the dummy module exactly where Node.js looks first!
-          echo "Creating dummy module inside scripts/node_modules..."
-          
-          # scripts/ အောက်တွင် node_modules ကို တိုက်ရိုက်ဆောက်မည်
-          mkdir -p scripts/node_modules/@yakit-libs/color
-          
-          # Javascript ၏ Proxy ကိုသုံးပြီး မည်သည့် အရောင် (red, green, etc.) ကို ခေါ်ခေါ် Error မတက်ဘဲ စာသားသာပြန်ပေးမည့် ဖိုင်ဖန်တီးမည်
-          cat << 'EOF' > scripts/node_modules/@yakit-libs/color/node.js
-          module.exports = new Proxy({}, {
-            get: function(target, prop) {
-              return function(text) { return text || ""; };
-            }
-          });
-          EOF
-          
-          # Package.json ကိုပါ ဖန်တီးပေးမည်
-          cat << 'EOF' > scripts/node_modules/@yakit-libs/color/package.json
-          {
-            "name": "@yakit-libs/color",
-            "version": "1.0.0",
-            "main": "node.js"
-          }
-          EOF
+          # (၃) Install Dependencies (Workspace link များကို အတင်းအဓမ္မ ပြန်ချိတ်ပါမည်)
+          yarn install --immutable || yarn install
 
-          echo "Dummy module successfully created at scripts/node_modules/@yakit-libs/color/node.js"
-
-          # 4. (Optional) Build internal libs just in case
+          # (၄) Internal Libraries များကို အသေချာဆုံး Build လုပ်ခြင်း (Local Dependencies အားလုံး အဆင်သင့်ဖြစ်စေရန်)
+          echo "Building internal workspaces..."
+          yarn workspaces foreach -pt run build || true
+          
+          # (၅) အကယ်၍ workspace loop ပျက်ကွက်ခဲ့လျှင် Manual ဝင်ရောက် Build မည်
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+              echo "Manually building: $dir"
               (cd "$dir" && yarn run build || npm run build || true)
             fi
           done
-          
+
+          # Render UI အတွက် လိုအပ်သော Install များ
           (cd app/renderer/src/main && yarn install)
           (cd app/renderer/engine-link-startup && yarn install)
+
+      - name: "4. Build & Package Electron App"
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          DEBUG: "electron-builder" 
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        shell: bash
+        run: |
+          yarn release-render || npm run release-render
+          yarn release-link-render || npm run release-link-render
+          
+          # ယခုအခါ 'nodeLinker: node-modules' ကြောင့် '@yakit-libs/color/node' ကို အလိုအလျောက် ရှာတွေ့သွားပါမည်
+          yarn build:electron || npm run build:electron
+          
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            npx electron-builder --win --x64
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            npx electron-builder --mac --x64
+            npx electron-builder --mac --arm64
+          else
+            sudo apt-get update && sudo apt-get install -y icnsutils graphicsmagick bsdtar build-essential || true
+            npx electron-builder --linux --x64
+          fi
 
       - name: "5. Build & Package Electron App"
         env:
