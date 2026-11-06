@@ -112,15 +112,15 @@ jobs:
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-          # ဤစာကြောင်းက အရေးကြီးပါသည်။ yarn သို့မဟုတ် node သုံးတိုင်း interceptor ကို အရင် Run ပေးပါမည်။
-          NODE_OPTIONS: "--require ./mock-requires.js"
+          # CRITICAL FIX: Use an absolute path so sub-processes don't lose the file
+          NODE_OPTIONS: "--require ${{ github.workspace }}/mock-requires.js"
         shell: bash
         run: |
           # 1. Render UI ကို Build မည်
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # 2. Electron ကို Build မည် (require() error မှန်သမျှကို Proxy က စုပ်ယူသွားပါမည်)
+          # 2. Electron ကို Build မည်
           yarn build:electron || npm run build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
