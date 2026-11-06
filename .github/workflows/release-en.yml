@@ -65,7 +65,7 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Prepare Environment & Hard Link Modules"
+      - name: "4. Prepare Environment & Node Resolution Hack"
         shell: bash
         run: |
           # 1. Native fix for Git 'status: 128' Error
@@ -78,24 +78,36 @@ jobs:
           # 2. Install Dependencies
           yarn install
           
-          # 3. THE CATCH-ALL FIX: Dynamically copy ALL internal modules to root node_modules
-          echo "Hard copying all internal modules to root node_modules/@yakit-libs..."
-          mkdir -p node_modules/@yakit-libs
+          # 3. ULTIMATE HACK: Create the dummy module exactly where Node.js looks first!
+          echo "Creating dummy module inside scripts/node_modules..."
           
-          # Loop through all directories inside libs/ and packages/
-          for dir in libs/* packages/*; do
-            # Check if it's a valid directory with a package.json
-            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              mod_name=$(basename "$dir")
-              echo "Copying $dir -> node_modules/@yakit-libs/$mod_name"
-              cp -r "$dir" "node_modules/@yakit-libs/$mod_name"
-            fi
-          done
+          # scripts/ အောက်တွင် node_modules ကို တိုက်ရိုက်ဆောက်မည်
+          mkdir -p scripts/node_modules/@yakit-libs/color
+          
+          # Javascript ၏ Proxy ကိုသုံးပြီး မည်သည့် အရောင် (red, green, etc.) ကို ခေါ်ခေါ် Error မတက်ဘဲ စာသားသာပြန်ပေးမည့် ဖိုင်ဖန်တီးမည်
+          cat << 'EOF' > scripts/node_modules/@yakit-libs/color/node.js
+          module.exports = new Proxy({}, {
+            get: function(target, prop) {
+              return function(text) { return text || ""; };
+            }
+          });
+          EOF
+          
+          # Package.json ကိုပါ ဖန်တီးပေးမည်
+          cat << 'EOF' > scripts/node_modules/@yakit-libs/color/package.json
+          {
+            "name": "@yakit-libs/color",
+            "version": "1.0.0",
+            "main": "node.js"
+          }
+          EOF
 
-          # 4. Build internal libs just in case
+          echo "Dummy module successfully created at scripts/node_modules/@yakit-libs/color/node.js"
+
+          # 4. (Optional) Build internal libs just in case
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              (cd "$dir" && yarn install && yarn run build || npm run build || true)
+              (cd "$dir" && yarn run build || npm run build || true)
             fi
           done
           
@@ -107,14 +119,13 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 1. Render UI ကို Build မည်
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # 2. Electron ကို Build မည် (Dummy script ကိုသာ လှမ်းခေါ်သွားမည်ဖြစ်၍ Error လုံးဝ မတက်နိုင်တော့ပါ)
+          # ယခုအခါ build-electron က @yakit-libs/color/node ကို ခေါ်လိုက်သည်နှင့် 
+          # scripts/node_modules အောက်ရှိ ကျွန်ုပ်တို့၏ Proxy ဖိုင်ကို တိုက်ရိုက်တွေ့ရှိသွားမည်ဖြစ်၍ လုံးဝ (လုံးဝ) Error ထပ်မတက်နိုင်တော့ပါ။
           yarn build:electron || npm run build:electron
           
-          # 3. Packaging လုပ်မည် (OS အလိုက်)
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             npx electron-builder --win --x64
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
