@@ -114,6 +114,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           # CRITICAL FIX: Use an absolute path so sub-processes don't lose the file
           NODE_OPTIONS: "--require ${{ github.workspace }}/mock-requires.js"
+          DEBUG: "electron-builder" # ဤစာကြောင်းကို ထည့်ပါ
         shell: bash
         run: |
           # 1. Render UI ကို Build မည်
