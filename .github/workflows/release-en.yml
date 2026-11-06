@@ -67,14 +67,18 @@ jobs:
         shell: bash
         run: |
           echo "1. Starting renderer builds..."
-          # Working tree ရှင်းလင်းနေသဖြင့် ဤအဆင့်ရှိ Git Checkout မှာ Error ကင်းစွာ အောင်မြင်ပါမည်
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
           echo "2. Injecting dummy module AFTER Git operations..."
-          # Git အလုပ်လုပ်ပြီးမှသာလျှင် Node.js ရှာဖွေမည့် နေရာသို့ Dummy ဖိုင်ကို တိုက်ရိုက်ဖန်တီးထည့်မည်
-          # ဤနည်းဖြင့် Tracked File ကို မထိခိုက်ဘဲ MODULE_NOT_FOUND ကို ကျော်ဖြတ်နိုင်ပါသည်
           mkdir -p scripts/node_modules/@yakit-libs/color
+          
+          # (အသစ်ထည့်သွင်းချက်) Node.js v22 ရှာဖွေနေသော Scope-level package.json ကို ဖန်တီးမည်
+          cat << 'EOF' > scripts/node_modules/@yakit-libs/package.json
+          { "name": "@yakit-libs", "version": "1.0.0" }
+          EOF
+          
+          # ယခင် Module နှင့် Proxy အတု
           cat << 'EOF' > scripts/node_modules/@yakit-libs/color/node.js
           module.exports = new Proxy({}, { get: () => (t) => t || "" });
           EOF
@@ -83,7 +87,7 @@ jobs:
           EOF
           
           echo "3. Starting main electron build..."
-          # Module Error ကင်းရှင်းစွာဖြင့် Electron Build ပြီးဆုံးပါမည်
+          # လိုအပ်သော package.json အားလုံး ပြည့်စုံသွားပြီဖြစ်၍ ဤအဆင့် အောင်မြင်သွားပါမည်
           yarn build:electron || npm run build:electron
           
           echo "4. Packaging application..."
