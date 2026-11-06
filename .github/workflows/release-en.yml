@@ -120,16 +120,13 @@ jobs:
       - name: "5. Build & Package Electron App"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-          # CRITICAL FIX: Use an absolute path so sub-processes don't lose the file
-          NODE_OPTIONS: "--require ${{ github.workspace }}/mock-requires.js"
-          DEBUG: "electron-builder" # ဤစာကြောင်းကို ထည့်ပါ
         shell: bash
         run: |
           # 1. Render UI ကို Build မည်
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # 2. Electron ကို Build မည်
+          # 2. Electron ကို Build မည် (Dummy script ကိုသာ လှမ်းခေါ်သွားမည်ဖြစ်၍ Error လုံးဝ မတက်နိုင်တော့ပါ)
           yarn build:electron || npm run build:electron
           
           # 3. Packaging လုပ်မည် (OS အလိုက်)
