@@ -65,7 +65,7 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Prepare Environment & Intercept Requires"
+      - name: "4. Prepare Environment & Deep Source Patching"
         shell: bash
         run: |
           # 1. Native fix for Git 'status: 128' Error
@@ -78,36 +78,44 @@ jobs:
           # 2. Install Dependencies
           yarn install
           
-          # 3. THE ULTIMATE FIX: Create a Node.js Preload Script to intercept ALL missing modules
-          echo "Creating global require interceptor..."
-          cat << 'EOF' > mock-requires.js
-          const Module = require('module');
-          const originalRequire = Module.prototype.require;
-          
-          Module.prototype.require = function(request) {
-            // @yakit-libs သို့မဟုတ် အခြားရှာမတွေ့နိုင်သော module များကို ကြားဖြတ်မည်
-            if (request.startsWith('@yakit-libs/')) {
-              console.log(`[CI Mock] Bypassing missing module: ${request}`);
-              
-              // Proxy ကိုသုံးပြီး မည်သည့် function call, object property ကိုမဆို Error မတက်ဘဲ ကျော်ဖြတ်နိုင်အောင် လုပ်ပေးမည်
-              return new Proxy(function() {}, {
-                get: function(target, prop) {
-                  return function() { return ""; };
-                },
-                apply: function() { return ""; }
-              });
-            }
-            // ပုံမှန် module များအတွက် မူလ require အတိုင်းသာ ပြန်ခေါ်မည်
-            return originalRequire.apply(this, arguments);
+          # 3. THE ULTIMATE FIX: Create a local dummy module right next to the build script
+          echo "Creating local dummy color module..."
+          cat << 'EOF' > scripts/dummy-color.js
+          const t = (text) => text || "";
+          module.exports = {
+            red: t, green: t, yellow: t, blue: t, magenta: t, cyan: t, 
+            white: t, gray: t, bold: t, dim: t, italic: t, underline: t,
+            default: { red: t, green: t, yellow: t, blue: t }
           };
           EOF
 
-          # 4. Build internal libs just in case
-          for dir in libs/* packages/*; do
-            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              (cd "$dir" && yarn install && yarn run build || npm run build || true)
+          # 4. Aggressively Text-Replace the missing module string in ALL scripts
+          # Yarn PnP ကို လုံးဝကျော်ဖြတ်ရန်အတွက် Script ထဲက စာသားကို တိုက်ရိုက်ပြင်ပါမည်
+          for file in scripts/*.mjs scripts/*.js; do
+            if [ -f "$file" ]; then
+              node -e "
+              const fs = require('fs');
+              const file = '$file';
+              let code = fs.readFileSync(file, 'utf8');
+              if(code.includes('@yakit-libs/color/node')) {
+                // ပြဿနာတက်နေသော module လမ်းကြောင်းကို ကျွန်ုပ်တို့၏ dummy ဖိုင်လမ်းကြောင်းဖြင့် အစားထိုးမည်
+                code = code.replace(/['\"]@yakit-libs\/color\/node['\"]/g, \"'./dummy-color.js'\");
+                fs.writeFileSync(file, code);
+                console.log('Successfully repointed missing module to dummy in: ' + file);
+              }
+              "
             fi
           done
+
+          # 5. Build internal libs just in case
+          for dir in libs/* packages/*; do
+            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+              (cd "$dir" && yarn run build || npm run build || true)
+            fi
+          done
+          
+          (cd app/renderer/src/main && yarn install)
+          (cd app/renderer/engine-link-startup && yarn install)
 
       - name: "5. Build & Package Electron App"
         env:
