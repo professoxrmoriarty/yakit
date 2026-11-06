@@ -11,6 +11,7 @@ import { genBaseAIChatData, genExecTasks, handleTaskPlanEnd, trySettleTaskPlanEn
 import { type AIChatQSData, AIChatQSDataTypeEnum } from '../aiRender'
 import cloneDeep from 'lodash/cloneDeep'
 import { DefaultCurrentExecTaskTree, DefaultPlanItemDetailsData, DefaultTaskPlanEndGate } from '../defaultConstant'
+import { isUnsetSessionSnapshotExecution } from '../sessionSnapshotExecution'
 import has from 'lodash/has'
 import {
   persistIndependentItem,
@@ -225,7 +226,13 @@ const handleReactTaskDequeue: AIMessageHandler = (requestInfo) => {
   // 实时数据里，记录用户问题的状态和专注模式信息
   if (!res.IsSync) {
     sendRequest({ IsSyncMessage: true, SyncType: AIInputEventSyncTypeEnum.SYNC_TYPE_QUEUE_INFO })
-    rawData.taskDetailsMap.set(res.TaskId || data.react_task_id, cloneDeep(DefaultPlanItemDetailsData))
+    const nextTaskId = res.TaskId || data.react_task_id
+    const nextDetails = cloneDeep(DefaultPlanItemDetailsData)
+    const previous = rawData.taskDetailsMap.get(store.getState().currentChatStatus.questionID)
+    if (previous?.execution && !isUnsetSessionSnapshotExecution(previous.execution)) {
+      nextDetails.execution = cloneDeep(previous.execution)
+    }
+    rawData.taskDetailsMap.set(nextTaskId, nextDetails)
     store.getState().updateStateCount('taskDetailsUpdate')
     store.getState().updateStateCount('chatTodoListUpdate')
     store.getState().updateState({
@@ -245,6 +252,7 @@ const handleReactTaskDequeue: AIMessageHandler = (requestInfo) => {
   }
 
   // 用户问题的UI回显
+  const previousMessage = rawData.contents.get(res.TaskId || data.react_task_id)
   const chatData: AIChatQSData = {
     id: res.TaskId || data.react_task_id,
     chatType: 'reAct',
@@ -253,6 +261,7 @@ const handleReactTaskDequeue: AIMessageHandler = (requestInfo) => {
     data: data.react_task_input || '',
     AIService: '',
     AIModelName: '',
+    interactionMetadata: previousMessage?.interactionMetadata,
     // showQS为了UI渲染方便，重新构建的字段
     extraValue: {
       showQS: data.react_task_input || '',

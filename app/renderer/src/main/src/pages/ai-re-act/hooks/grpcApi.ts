@@ -48,6 +48,7 @@ export enum AISourceEnum {
 export type AISource = `${AISourceEnum}`
 
 export interface AIStartParams {
+  ClientUI?: string
   CoordinatorId?: string
   Sequence?: number
 
@@ -256,6 +257,7 @@ export enum AIInputEventHotPatchTypeEnum {
 
 /** AIInputEvent-SyncType 的可选值 */
 export enum AIInputEventSyncTypeEnum {
+  SYNC_TYPE_UI_INTERACTION = 'ui_interaction',
   /** 获取正在执行的任务树 */
   SYNC_TYPE_PLAN = 'plan',
   SYNC_TYPE_CONSUMPTION = 'consumption',
@@ -332,6 +334,7 @@ export const isReadonlySyncQuery = (syncType?: `${AIInputEventSyncTypeEnum}`): b
   !!syncType && readonlySyncQueryTypes.has(syncType)
 
 export interface AIInputEvent {
+  UserInteraction?: string
   IsStart?: boolean
   Params?: AIStartParams // 提问问题相关
 
@@ -902,6 +905,9 @@ export declare namespace AIAgentGrpcApi {
       tool_call_success: number
       tool_call_failed: number
       tool_call_total: number
+      /** 区间合并后的有效执行秒数。展示优先用它；旧快照可能缺这个字段 */
+      execution_seconds?: number
+      /** 由 execution_seconds / 60 派生，只适合分钟级模糊展示 */
       execution_minutes: number
       http_flow_count: number
       risk_count: number

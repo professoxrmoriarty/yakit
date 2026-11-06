@@ -96,6 +96,12 @@ export default defineConfig(({ mode, command }) => {
     envPrefix: ['YAKIT_', 'REACT_APP_', 'VITE_'],
     define: yakitProcessEnvDefines(mode),
     plugins: [
+      {
+        name: 'memfit-ui-catalog',
+        buildStart() {
+          execFileSync(process.execPath, [path.resolve(rootDir, '../../../../scripts/export-memfit-ui-catalog.mjs')])
+        },
+      },
       generateThemeCssPlugin(),
       noopAntdComponentStylePlugin(),
       yakitUiIconsPurePlugin(),
@@ -270,7 +276,6 @@ export default defineConfig(({ mode, command }) => {
         'react-copy-to-clipboard',
         '@ant-design/icons/es/icons/CheckOutlined',
         '@ant-design/icons/lib/icons/CheckOutlined',
-        'rc-util/es/Dom/getScrollBarSize',
         'uuid',
         'moment',
         'moment/locale/zh-cn',
@@ -318,7 +323,7 @@ export default defineConfig(({ mode, command }) => {
       // minification, whose minify workers can exceed 10 GiB in this project.
       // Build metadata prevents comparison with fully minified performance runs.
       // 对应 CRA config-overrides.js: config.optimization.minimize = false
-      minify: process.env.YAKIT_E2E_BOUNDED_BUILD === '1' ? false : 'esbuild',
+      minify: process.env.YAKIT_E2E_BOUNDED_BUILD === '1' ? false : 'oxc',
       // Vite 8 粒粒度 css chunk 会把入口 css（含 antd）排到组件 css 之后，
       // 同优先级下 antd 反噬组件样式（与 CRA 顺序相反）。Electron 本地加载无需 css 分包，
       // 关掉后按模块导入顺序合成单文件：antd 最早导入 → 排在最前 → 组件样式可正常覆盖
