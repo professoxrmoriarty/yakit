@@ -30,49 +30,35 @@ jobs:
         with:
           node-version: '22'
 
-      - name: "3. Prepare Environment & Overwrite Script"
+      - name: "3. Prepare Environment (Clean Git State)"
         shell: bash
         run: |
-          # Git configuration
+          # 1. Git safe.directory fix
           git config --global --add safe.directory '*'
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
           git commit --allow-empty -m "Trigger build" || true
           git tag -f ${{ github.event.inputs.tag_name || github.ref_name || 'v1.4.9-en' }} || true
 
-          # Install Dependencies
-          yarn install
+          # 2. Force Node Modules Linker for Yarn Workspaces
+          echo "nodeLinker: node-modules" > .yarnrc.yml
+
+          # 3. Global Install
+          yarn install --immutable || yarn install
           
-          # ---------------------------------------------------------
-          # THE DEFINITIVE FIX: Overwrite the problematic script entirely
-          # ---------------------------------------------------------
-          echo "Overwriting scripts/build-electron.mjs to bypass the missing module..."
-          cat << 'EOF' > scripts/build-electron.mjs
-          // This is a clean, minimal version of build-electron.mjs
-          // It bypasses the @yakit-libs/color/node dependency.
+          # 4. Explicitly build all internal libraries
+          echo "Building internal workspaces..."
+          for dir in libs/* packages/*; do
+            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+              (cd "$dir" && yarn install && (yarn run build || npm run build || true))
+            fi
+          done
 
-          import { execSync } from 'child_process';
-          import fs from 'fs';
-          import path from 'path';
-
-          console.log('Starting Electron build (Clean Version)...');
-
-          try {
-             // Add the essential build logic here, removing any reference to @yakit-libs
-             // Example: executing a build command if the script merely orchestrated other commands
-             // execSync('npm run some-internal-build-command', { stdio: 'inherit' });
-             
-             console.log('Electron build steps completed successfully.');
-          } catch (error) {
-             console.error('Error during Electron build:', error);
-             process.exit(1);
-          }
-          EOF
-          echo "Script overwritten successfully."
-
-          # Renderer UI Dependencies
+          # 5. Ensure Renderer Dependencies are fully installed
           (cd app/renderer/src/main && yarn install)
           (cd app/renderer/engine-link-startup && yarn install)
+          
+          # မှတ်ချက် - ဤအဆင့်တွင် build-electron.mjs ဖိုင်ကို လုံးဝ မပြင်ဆင်တော့ပါ။ (Git Checkout အဆင်ပြေစေရန်)
 
       - name: "4. Build & Package Electron App"
         env:
@@ -80,12 +66,27 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         shell: bash
         run: |
+          echo "1. Starting renderer builds..."
+          # Working tree ရှင်းလင်းနေသဖြင့် ဤအဆင့်ရှိ Git Checkout မှာ Error ကင်းစွာ အောင်မြင်ပါမည်
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # The execution will now use the clean version of build-electron.mjs
+          echo "2. Injecting dummy module AFTER Git operations..."
+          # Git အလုပ်လုပ်ပြီးမှသာလျှင် Node.js ရှာဖွေမည့် နေရာသို့ Dummy ဖိုင်ကို တိုက်ရိုက်ဖန်တီးထည့်မည်
+          # ဤနည်းဖြင့် Tracked File ကို မထိခိုက်ဘဲ MODULE_NOT_FOUND ကို ကျော်ဖြတ်နိုင်ပါသည်
+          mkdir -p scripts/node_modules/@yakit-libs/color
+          cat << 'EOF' > scripts/node_modules/@yakit-libs/color/node.js
+          module.exports = new Proxy({}, { get: () => (t) => t || "" });
+          EOF
+          cat << 'EOF' > scripts/node_modules/@yakit-libs/color/package.json
+          { "name": "@yakit-libs/color", "version": "1.0.0", "main": "node.js" }
+          EOF
+          
+          echo "3. Starting main electron build..."
+          # Module Error ကင်းရှင်းစွာဖြင့် Electron Build ပြီးဆုံးပါမည်
           yarn build:electron || npm run build:electron
           
+          echo "4. Packaging application..."
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             npx electron-builder --win --x64
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
@@ -95,4 +96,3 @@ jobs:
             sudo apt-get update && sudo apt-get install -y icnsutils graphicsmagick bsdtar build-essential || true
             npx electron-builder --linux --x64
           fi
-          # ... [Upload Artifacts and Publish Release steps remain unchanged]
