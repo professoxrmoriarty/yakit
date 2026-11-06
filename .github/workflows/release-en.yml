@@ -16,6 +16,7 @@ permissions:
 jobs:
   build-and-package:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -30,51 +31,33 @@ jobs:
         with:
           node-version: '22'
 
-      - name: "3. Prepare Environment & Deep Source Injection"
+      - name: "3. Prepare Environment & Dependencies"
         shell: bash
         run: |
-          # (၁) Git safe.directory fix
+          # 1. Git safe.directory fix
           git config --global --add safe.directory '*'
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
           git commit --allow-empty -m "Trigger build" || true
           git tag -f ${{ github.event.inputs.tag_name || github.ref_name || 'v1.4.9-en' }} || true
 
-          # (၂) Install Dependencies
-          yarn install
-          
-          # (၃) ULTIMATE FIX: Inject the proxy directly into the build script's source code!
-          echo "Injecting bulletproof require-interceptor into build-electron.mjs..."
-          node -e "
-          const fs = require('fs');
-          const file = 'scripts/build-electron.mjs';
-          if (fs.existsSync(file)) {
-            let lines = fs.readFileSync(file, 'utf8').split('\n');
-            let shebang = '';
-            if (lines[0].startsWith('#!')) shebang = lines.shift() + '\n';
-            
-            // ဤ Patch သည် @yakit-libs ဟုခေါ်သမျှကို အဆုံးအစမရှိသော (Infinite) Proxy Object အဖြစ် အလိုအလျောက် ပြောင်းလဲပေးမည်ဖြစ်ရာ Error လုံးဝ မတက်နိုင်တော့ပါ။
-            const patch = \`
-            import __Module from 'module';
-            const __origRequire = __Module.prototype.require;
-            const __dummyProxy = new Proxy(function(){ return ''; }, {
-              get: (target, prop) => (prop === 'toString' || prop === Symbol.toPrimitive) ? () => '' : __dummyProxy,
-              apply: () => ''
-            });
-            __Module.prototype.require = function(req) {
-              if (req && req.includes('@yakit-libs')) return __dummyProxy;
-              return __origRequire.apply(this, arguments);
-            };
-            \`;
-            
-            fs.writeFileSync(file, shebang + patch + '\n' + lines.join('\n'));
-            console.log('Successfully patched ' + file);
-          } else {
-            console.log('File not found, skipping patch.');
-          }
-          "
+          # 2. Force Node Modules Linker for Yarn Workspaces
+          echo "nodeLinker: node-modules" > .yarnrc.yml
 
-          # (၄) Render UI Dependencies
+          # 3. Global Install
+          yarn install --immutable || yarn install
+          
+          # 4. Explicitly build all internal libraries
+          echo "Building internal workspaces..."
+          for dir in libs/* packages/*; do
+            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+              echo "Building: $dir"
+              (cd "$dir" && yarn install && (yarn run build || npm run build || true))
+            fi
+          done
+
+          # 5. Ensure Renderer Dependencies are fully installed
+          echo "Installing renderer dependencies..."
           (cd app/renderer/src/main && yarn install)
           (cd app/renderer/engine-link-startup && yarn install)
 
@@ -84,12 +67,14 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         shell: bash
         run: |
+          echo "Starting renderer builds..."
           yarn release-render || npm run release-render
           yarn release-link-render || npm run release-link-render
           
-          # ယခုအခါ Script ထဲတွင် Proxy ဝင်နေပြီဖြစ်၍ MODULE_NOT_FOUND လုံးဝ (လုံးဝ) မတက်နိုင်တော့ဘဲ အောင်မြင်စွာ ပြီးဆုံးပါမည်။
+          echo "Starting main electron build..."
           yarn build:electron || npm run build:electron
           
+          echo "Packaging application..."
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             npx electron-builder --win --x64
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
