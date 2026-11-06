@@ -65,7 +65,7 @@ jobs:
           # Copy to Electron bundle directory
           cp -r bins/* app/main/assets/bins/ 2>/dev/null || true
 
-      - name: "4. Prepare Environment & Deep Source Patching"
+      - name: "4. Prepare Environment & Hard Link Modules"
         shell: bash
         run: |
           # 1. Native fix for Git 'status: 128' Error
@@ -78,39 +78,24 @@ jobs:
           # 2. Install Dependencies
           yarn install
           
-          # 3. THE ULTIMATE FIX: Create a local dummy module right next to the build script
-          echo "Creating local dummy color module..."
-          cat << 'EOF' > scripts/dummy-color.js
-          const t = (text) => text || "";
-          module.exports = {
-            red: t, green: t, yellow: t, blue: t, magenta: t, cyan: t, 
-            white: t, gray: t, bold: t, dim: t, italic: t, underline: t,
-            default: { red: t, green: t, yellow: t, blue: t }
-          };
-          EOF
-
-          # 4. Aggressively Text-Replace the missing module string in ALL scripts
-          # Yarn PnP ကို လုံးဝကျော်ဖြတ်ရန်အတွက် Script ထဲက စာသားကို တိုက်ရိုက်ပြင်ပါမည်
-          for file in scripts/*.mjs scripts/*.js; do
-            if [ -f "$file" ]; then
-              node -e "
-              const fs = require('fs');
-              const file = '$file';
-              let code = fs.readFileSync(file, 'utf8');
-              if(code.includes('@yakit-libs/color/node')) {
-                // ပြဿနာတက်နေသော module လမ်းကြောင်းကို ကျွန်ုပ်တို့၏ dummy ဖိုင်လမ်းကြောင်းဖြင့် အစားထိုးမည်
-                code = code.replace(/['\"]@yakit-libs\/color\/node['\"]/g, \"'./dummy-color.js'\");
-                fs.writeFileSync(file, code);
-                console.log('Successfully repointed missing module to dummy in: ' + file);
-              }
-              "
+          # 3. THE CATCH-ALL FIX: Dynamically copy ALL internal modules to root node_modules
+          echo "Hard copying all internal modules to root node_modules/@yakit-libs..."
+          mkdir -p node_modules/@yakit-libs
+          
+          # Loop through all directories inside libs/ and packages/
+          for dir in libs/* packages/*; do
+            # Check if it's a valid directory with a package.json
+            if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
+              mod_name=$(basename "$dir")
+              echo "Copying $dir -> node_modules/@yakit-libs/$mod_name"
+              cp -r "$dir" "node_modules/@yakit-libs/$mod_name"
             fi
           done
 
-          # 5. Build internal libs just in case
+          # 4. Build internal libs just in case
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
-              (cd "$dir" && yarn run build || npm run build || true)
+              (cd "$dir" && yarn install && yarn run build || npm run build || true)
             fi
           done
           
