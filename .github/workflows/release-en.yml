@@ -130,3 +130,43 @@ jobs:
             sudo apt-get update && sudo apt-get install -y icnsutils graphicsmagick bsdtar build-essential || true
             npx electron-builder --linux --x64
           fi
+      - name: "5. Upload Artifacts to Pipeline"
+        uses: actions/upload-artifact@v4
+        with:
+          name: yakit-release-${{ matrix.os }}
+          path: |
+            dist/**/*.exe
+            dist/**/*.dmg
+            dist/**/*.AppImage
+            dist/**/*.zip
+            dist/**/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 1
+ publish-release:
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: "Download all artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: yakit-release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: "Display downloaded files"
+        run: |
+          echo "Downloaded release assets:"
+          ls -la release-assets/
+
+      - name: "Publish GitHub Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: "Yakit English Edition (${{ github.event.inputs.tag_name || github.ref_name }})"
+          target_commitish: ${{ github.sha }}
+          overwrite: true
+          draft: false
+          prerelease: false
+          files: release-assets/**/*
