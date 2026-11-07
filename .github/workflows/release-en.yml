@@ -83,7 +83,6 @@ jobs:
           const file = 'scripts/build-electron.mjs';
           if (fs.existsSync(file)) {
             let code = fs.readFileSync(file, 'utf8');
-            // Bypassing ENOENT correctly for ES Modules
             code = code.replace(/await\s+readFile\(/g, 'await (async (...args) => { try { return await readFile(...args); } catch(e) { return \"\"; } })(');
             code = code.replace(/fs\.promises\.readFile/g, '(async (...args) => { try { return await fs.promises.readFile(...args); } catch(e) { return \"\"; } })(');
             fs.writeFileSync(file, code);
@@ -93,19 +92,33 @@ jobs:
           echo "4. Executing Electron main process build..."
           yarn build:electron || npm run build:electron || true
           
-          echo "5. Verifying build output and Forcing Git tracking..."
+          echo "5. Verifying build output & Patching electron-builder config..."
           mkdir -p dist/electron/main
           if [ ! -f "dist/electron/main/index.js" ]; then
             echo "Warning: index.js not found! Creating fallback to satisfy electron-builder..."
             echo 'const { app } = require("electron"); app.whenReady().then(() => console.log("Fallback Process Started"));' > dist/electron/main/index.js
           fi
           
-          # THE CRITICAL FIX: Prevent electron-builder from ignoring the dist folder!
-          # .gitignore ထဲတွင် dist/ ပါဝင်နေမှုကို ကျော်လွှားရန် Un-ignore rules များကို အောက်ဆုံးမှ ထပ်ပေါင်းထည့်မည်
-          if [ -f .gitignore ]; then
-            echo '!dist/' >> .gitignore
-            echo '!dist/**/*' >> .gitignore
-          fi
+          # THE CRITICAL FIX: Dynamically rewrite package.json to explicitly whitelist dist/electron/**/*
+          # ဤ Node script သည် builder က ဖယ်ရှားထားသော dist ဖိုင်တွဲထဲမှ လိုအပ်သည့် အစိတ်အပိုင်းကို အတင်းအဓမ္မ ပြန်လည်ထည့်သွင်းပေးပါမည်
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.build = pkg.build || {};
+          let files = pkg.build.files || ['**/*'];
+          if (!Array.isArray(files)) files = [files];
+          
+          // Builder ၏ ထွက်လာမည့် Output ဖိုင်ကြီးများကို မထည့်မိစေရန် သီးသန့်ပိတ်မည်
+          files.push('!dist/*.{exe,dmg,AppImage,zip,tar.gz,yml,blockmap}'); 
+          // ထို့နောက် Source code များကို မဖြစ်မနေ ထည့်သွင်းရန် အတိအကျ သတ်မှတ်မည်
+          if (!files.includes('dist/electron/**/*')) {
+             files.push('dist/electron/**/*');
+          }
+          
+          pkg.build.files = files;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          console.log('[CI Patch] Updated package.json build.files to explicitly whitelist dist/electron/**/*');
+          "
           
           echo "6. Packaging application..."
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
