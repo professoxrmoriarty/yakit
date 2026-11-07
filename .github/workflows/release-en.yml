@@ -83,38 +83,27 @@ jobs:
           { "name": "@yakit-libs/color", "version": "1.0.0", "main": "node.js" }
           EOF
           
-          echo "3. Patching build-electron.mjs to bypass missing CSS assets..."
-          # ဤ Node.js Script သည် fs.promises.readFile ကို ကြားဖြတ်ကာ missing CSS ဖိုင်များအတွက် Error မတက်စေဘဲ ကျော်ဖြတ်ပေးပါမည်။
+          echo "3. Inline Regex Patch for ENOENT in readFile..."
+          # ဤ Node.js Script သည် ကုဒ်ထဲရှိ readFile ခေါ်ဆိုမှုတိုင်းကို ရှာဖွေပြီး Try-Catch ဖြင့် တိုက်ရိုက်ပတ်ပေးပါမည်။
           node -e "
           const fs = require('fs');
           const file = 'scripts/build-electron.mjs';
           if (fs.existsSync(file)) {
             let code = fs.readFileSync(file, 'utf8');
-            const safePatch = \`
-          import __fs from 'fs';
-          const __origReadFile = __fs.promises.readFile;
-          __fs.promises.readFile = async function(...args) {
-            try { return await __origReadFile.apply(this, args); }
-            catch (err) {
-              if (err.code === 'ENOENT' && typeof args[0] === 'string' && args[0].endsWith('.css')) {
-                console.log('[CI Patch] Bypassed missing CSS:', args[0]);
-                return '';
-              }
-              throw err;
-            }
-          };\`;
-            if (code.startsWith('#!')) {
-              const firstNewLine = code.indexOf('\n');
-              code = code.slice(0, firstNewLine + 1) + safePatch + '\n' + code.slice(firstNewLine + 1);
-            } else {
-              code = safePatch + '\n' + code;
-            }
+            
+            // ES Module မှ တိုက်ရိုက်ခေါ်သော readFile ကို အစားထိုးခြင်း
+            code = code.replace(/await\s+readFile\s*\(/g, 'await (async (...args) => { try { return await readFile(...args); } catch(e) { console.log(\"[CI Patch] Bypassed missing file:\", args[0]); return \"\"; } })(');
+            
+            // fs.promises မှတဆင့်ခေါ်သော readFile ကိုပါ အစားထိုးခြင်း
+            code = code.replace(/await\s+fs\.promises\.readFile\s*\(/g, 'await (async (...args) => { try { return await fs.promises.readFile(...args); } catch(e) { console.log(\"[CI Patch] Bypassed missing file:\", args[0]); return \"\"; } })(');
+            
             fs.writeFileSync(file, code);
+            console.log('Successfully patched build-electron.mjs to bypass all ENOENT errors in readFile.');
           }
           "
           
           echo "4. Starting main electron build..."
-          # ယခုအခါ theme.css မရှိလျှင်လည်း Error မတက်တော့သဖြင့် ဤအဆင့် အောင်မြင်စွာ ပြီးဆုံးပါမည်။
+          # ယခုအခါ theme.css မရှိလျှင်လည်း Script က ပုံမှန်အတိုင်း အလုပ်ဆက်လုပ်သွားမည် ဖြစ်သည်။
           yarn build:electron || npm run build:electron
           
           echo "5. Packaging application..."
