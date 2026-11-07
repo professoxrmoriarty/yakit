@@ -14,9 +14,9 @@ permissions:
   contents: write
 
 jobs:
- build-and-package:
+  build-and-package:
     strategy:
-      fail-fast: false # OS တစ်ခု Error တက်တိုင်း ကျန်တာတွေကို လိုက်မပိတ်စေရန် ဤစာကြောင်း ထည့်ပါ
+      fail-fast: false 
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -34,20 +34,15 @@ jobs:
       - name: "3. Prepare Environment (Clean Git State)"
         shell: bash
         run: |
-          # 1. Git safe.directory fix
           git config --global --add safe.directory '*'
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
           git commit --allow-empty -m "Trigger build" || true
           git tag -f ${{ github.event.inputs.tag_name || github.ref_name || 'v1.4.9-en' }} || true
 
-          # 2. Force Node Modules Linker for Yarn Workspaces
           echo "nodeLinker: node-modules" > .yarnrc.yml
-
-          # 3. Global Install
           yarn install --immutable || yarn install
           
-          # 4. Explicitly build all internal libraries
           echo "Building internal workspaces..."
           for dir in libs/* packages/*; do
             if [ -d "$dir" ] && [ -f "$dir/package.json" ]; then
@@ -55,13 +50,10 @@ jobs:
             fi
           done
 
-          # 5. Ensure Renderer Dependencies are fully installed
           (cd app/renderer/src/main && yarn install)
           (cd app/renderer/engine-link-startup && yarn install)
-          
-          # မှတ်ချက် - ဤအဆင့်တွင် build-electron.mjs ဖိုင်ကို လုံးဝ မပြင်ဆင်တော့ပါ။ (Git Checkout အဆင်ပြေစေရန်)
 
-      - name: "4. Build & Package Electron App"
+      - name: "4. Build & Package Electron App (Yakit, IRify, Memfit)"
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -89,8 +81,15 @@ jobs:
           }
           "
           
-          echo "4. Executing Electron main process build..."
-          yarn build:electron || npm run build:electron || true
+          echo "4. Executing Electron main process build (All 3 Apps)..."
+          # CLI တည်ရှိပါက CLI အတိုင်း၊ မရှိပါက ပုံမှန်အတိုင်း App ၃ မျိုးလုံးကို Build မည်
+          if [ -f "cli/cli.mjs" ]; then
+            yarn cli build -v yakit --devtools || true
+            yarn cli build -v irify || true
+            yarn cli build -v memfit || true
+          else
+            yarn build:electron || npm run build:electron || true
+          fi
           
           echo "5. Verifying build output & Patching electron-builder config..."
           mkdir -p dist/electron/main
@@ -99,37 +98,38 @@ jobs:
             echo 'const { app } = require("electron"); app.whenReady().then(() => console.log("Fallback Process Started"));' > dist/electron/main/index.js
           fi
           
-          # THE CRITICAL FIX: Dynamically rewrite package.json to explicitly whitelist dist/electron/**/*
-          # ဤ Node script သည် builder က ဖယ်ရှားထားသော dist ဖိုင်တွဲထဲမှ လိုအပ်သည့် အစိတ်အပိုင်းကို အတင်းအဓမ္မ ပြန်လည်ထည့်သွင်းပေးပါမည်
           node -e "
           const fs = require('fs');
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           pkg.build = pkg.build || {};
           let files = pkg.build.files || ['**/*'];
           if (!Array.isArray(files)) files = [files];
-          
-          // Builder ၏ ထွက်လာမည့် Output ဖိုင်ကြီးများကို မထည့်မိစေရန် သီးသန့်ပိတ်မည်
           files.push('!dist/*.{exe,dmg,AppImage,zip,tar.gz,yml,blockmap}'); 
-          // ထို့နောက် Source code များကို မဖြစ်မနေ ထည့်သွင်းရန် အတိအကျ သတ်မှတ်မည်
-          if (!files.includes('dist/electron/**/*')) {
-             files.push('dist/electron/**/*');
-          }
-          
+          if (!files.includes('dist/electron/**/*')) { files.push('dist/electron/**/*'); }
           pkg.build.files = files;
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          console.log('[CI Patch] Updated package.json build.files to explicitly whitelist dist/electron/**/*');
           "
           
-          echo "6. Packaging application..."
+          echo "6. Packaging applications (Yakit, IRify, Memfit)..."
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            npx electron-builder --win --x64
+            PLATFORM_ARGS="--win --x64"
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            npx electron-builder --mac --x64
-            npx electron-builder --mac --arm64
+            PLATFORM_ARGS="--mac --x64 --arm64"
           else
             sudo apt-get update && sudo apt-get install -y icnsutils graphicsmagick bsdtar build-essential || true
-            npx electron-builder --linux --x64
+            PLATFORM_ARGS="--linux --x64"
           fi
+
+          if [ -f "cli/cli.mjs" ]; then
+             if [ "${{ matrix.os }}" == "windows-latest" ]; then PLATFORM="win"; elif [ "${{ matrix.os }}" == "macos-latest" ]; then PLATFORM="mac"; else PLATFORM="linux"; fi
+             yarn cli pack -s $PLATFORM -v yakit || npx electron-builder $PLATFORM_ARGS
+             yarn cli pack -s $PLATFORM -v irify || true
+             yarn cli pack -s $PLATFORM -v memfit || true
+          else
+             # CLI မရှိပါက electron-builder ဖြင့် တိုက်ရိုက် Pack မည်
+             npx electron-builder $PLATFORM_ARGS
+          fi
+
       - name: "5. Upload Artifacts to Pipeline"
         uses: actions/upload-artifact@v4
         with:
@@ -138,11 +138,13 @@ jobs:
             dist/**/*.exe
             dist/**/*.dmg
             dist/**/*.AppImage
-            dist/**/*.zip
-            dist/**/*.tar.gz
+            release/**/*.exe
+            release/**/*.dmg
+            release/**/*.AppImage
           if-no-files-found: warn
           retention-days: 1
- publish-release:
+
+  publish-release:
     needs: build-and-package
     runs-on: ubuntu-latest
     permissions:
@@ -160,13 +162,55 @@ jobs:
           echo "Downloaded release assets:"
           ls -la release-assets/
 
-      - name: "Publish GitHub Release"
+      - name: "Resolve Tag Name"
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          echo "FINAL_TAG=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: "Publish Yakit Release"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          name: "Yakit English Edition (${{ github.event.inputs.tag_name || github.ref_name }})"
-          target_commitish: ${{ github.sha }}
+          tag_name: ${{ steps.tag.outputs.FINAL_TAG }}
+          name: "Yakit English Edition (${{ steps.tag.outputs.FINAL_TAG }})"
           overwrite: true
           draft: false
           prerelease: false
-          files: release-assets/**/*
+          files: |
+            release-assets/**/Yakit*.exe
+            release-assets/**/Yakit*.dmg
+            release-assets/**/Yakit*.AppImage
+
+      - name: "Publish IRify Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.FINAL_TAG }}-irify
+          name: "IRify English Edition (${{ steps.tag.outputs.FINAL_TAG }}-irify)"
+          overwrite: true
+          body: |
+            ### IRify English Edition — ${{ steps.tag.outputs.FINAL_TAG }}-irify
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Description:** Static code analysis & rule evaluation brought to GUI.
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/IRify*.exe
+            release-assets/**/IRify*.dmg
+            release-assets/**/IRify*.AppImage
+
+      - name: "Publish Memfit AI Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.FINAL_TAG }}-memfit
+          name: "Memfit AI English Edition (${{ steps.tag.outputs.FINAL_TAG }}-memfit)"
+          overwrite: true
+          body: |
+            ### Memfit AI English Edition — ${{ steps.tag.outputs.FINAL_TAG }}-memfit
+            * **Default Language:** English (`en`) enabled out of the box.
+            * **Description:** Open-source cybersecurity AI Agent orchestration framework.
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/**/Memfit*.exe
+            release-assets/**/Memfit*.dmg
+            release-assets/**/Memfit*.AppImage
