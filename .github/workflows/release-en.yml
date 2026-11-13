@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*-en'
+  workflow_call:
+    inputs:
+      tag_name:
+        type: string
+        required: false
   workflow_dispatch:
     inputs:
       tag_name:
@@ -38,7 +43,13 @@ jobs:
           git config --global user.email "bot@yaklang.io"
           git config --global user.name "Yakit Bot"
           git commit --allow-empty -m "Trigger build" || true
-          git tag -f ${{ github.event.inputs.tag_name || github.ref_name || 'v1.4.9-en' }} || true
+          
+          INPUT_TAG="${{ inputs.tag_name || github.event.inputs.tag_name }}"
+          if [[ -n "$INPUT_TAG" ]]; then
+            git tag -f "$INPUT_TAG" || true
+          else
+            git tag -f "v$(date +'%Y.%m.%d')-en" || true
+          fi
 
           echo "nodeLinker: node-modules" > .yarnrc.yml
           yarn install --immutable || yarn install
@@ -82,7 +93,6 @@ jobs:
           "
           
           echo "4. Executing Electron main process build (All 3 Apps)..."
-          # CLI တည်ရှိပါက CLI အတိုင်း၊ မရှိပါက ပုံမှန်အတိုင်း App ၃ မျိုးလုံးကို Build မည်
           if [ -f "cli/cli.mjs" ]; then
             yarn cli build -v yakit --devtools || true
             yarn cli build -v irify || true
@@ -113,20 +123,21 @@ jobs:
           echo "6. Packaging applications (Yakit, IRify, Memfit)..."
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             PLATFORM_ARGS="--win --x64"
+            PLATFORM="win"
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
             PLATFORM_ARGS="--mac --x64 --arm64"
+            PLATFORM="mac"
           else
             sudo apt-get update && sudo apt-get install -y icnsutils graphicsmagick bsdtar build-essential || true
             PLATFORM_ARGS="--linux --x64"
+            PLATFORM="linux"
           fi
 
           if [ -f "cli/cli.mjs" ]; then
-             if [ "${{ matrix.os }}" == "windows-latest" ]; then PLATFORM="win"; elif [ "${{ matrix.os }}" == "macos-latest" ]; then PLATFORM="mac"; else PLATFORM="linux"; fi
              yarn cli pack -s $PLATFORM -v yakit || npx electron-builder $PLATFORM_ARGS
              yarn cli pack -s $PLATFORM -v irify || true
              yarn cli pack -s $PLATFORM -v memfit || true
           else
-             # CLI မရှိပါက electron-builder ဖြင့် တိုက်ရိုက် Pack မည်
              npx electron-builder $PLATFORM_ARGS
           fi
 
@@ -165,15 +176,30 @@ jobs:
       - name: "Resolve Tag Name"
         id: tag
         run: |
-          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
-          echo "FINAL_TAG=${TAG}" >> "$GITHUB_OUTPUT"
+          # ဤနေရာတွင် workflow_call နှင့် workflow_dispatch နှစ်ခုလုံးအတွက် အတိအကျ အလုပ်လုပ်စေရန် ပြင်ဆင်ထားပါသည်
+          INPUT_TAG="${{ inputs.tag_name || github.event.inputs.tag_name }}"
+          
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            FINAL_TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_TAG}" ]]; then
+            FINAL_TAG="${INPUT_TAG}"
+          else
+            FINAL_TAG="v$(date +'%Y.%m.%d')-en"
+          fi
+          
+          # Branch အမည်ကို Tag အဖြစ် မှားယွင်းမယူမိစေရန် ကာကွယ်ခြင်း (HttpError 403 ကို အပြည့်အဝ တားဆီးပေးပါမည်)
+          if [[ "${FINAL_TAG}" == "english-edition" || "${FINAL_TAG}" == "main" || "${FINAL_TAG}" == "master" ]]; then
+            FINAL_TAG="v$(date +'%Y.%m.%d')-en"
+          fi
+          
+          echo "FINAL_TAG=${FINAL_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using Release Tag: ${FINAL_TAG}"
 
       - name: "Publish Yakit Release"
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.FINAL_TAG }}
           name: "Yakit English Edition (${{ steps.tag.outputs.FINAL_TAG }})"
-          overwrite: true
           draft: false
           prerelease: false
           files: |
@@ -186,7 +212,6 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.FINAL_TAG }}-irify
           name: "IRify English Edition (${{ steps.tag.outputs.FINAL_TAG }}-irify)"
-          overwrite: true
           body: |
             ### IRify English Edition — ${{ steps.tag.outputs.FINAL_TAG }}-irify
             * **Default Language:** English (`en`) enabled out of the box.
@@ -203,7 +228,6 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.FINAL_TAG }}-memfit
           name: "Memfit AI English Edition (${{ steps.tag.outputs.FINAL_TAG }}-memfit)"
-          overwrite: true
           body: |
             ### Memfit AI English Edition — ${{ steps.tag.outputs.FINAL_TAG }}-memfit
             * **Default Language:** English (`en`) enabled out of the box.
